@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>缓读 · Demo（模拟网页 + 插件面板）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; background: #e9ece8; }
+
+  .demo-hint {
+    background: #177d72; color: #fff; text-align: center; padding: 8px 16px; font-size: 13px;
+  }
+  .demo-hint b { text-decoration: underline; cursor: pointer; }
+
+  /* ---- 模拟的“普通网页” ---- */
+  .fake-site-nav {
+    background: #1e2723; color: #fff; height: 56px; display: flex; align-items: center;
+    padding: 0 32px; gap: 28px; font-size: 14px;
+  }
+  .fake-site-nav .logo { font-weight: 700; font-size: 18px; margin-right: 20px; }
+  .fake-site-nav a { color: #cfd8d3; text-decoration: none; }
+
+  .fake-banner {
+    background: #b95042; color: #fff; text-align: center; padding: 10px; font-size: 13px;
+  }
+
+  .fake-layout {
+    display: grid; grid-template-columns: 220px 1fr 260px; gap: 0; min-height: 100vh;
+    max-width: 1600px; margin: 0 auto; background: #fff;
+  }
+
+  .fake-sidebar {
+    background: #f6f7f5; border-right: 1px solid #e4e6e2; padding: 24px 18px; font-size: 13px; color: #56625c;
+  }
+  .fake-sidebar h4 { font-size: 12px; color: #87908a; margin: 0 0 10px; }
+  .fake-sidebar .ad-block {
+    margin-top: 30px; background: #e9e6d9; padding: 14px; font-size: 13px; color: #5a5547; line-height: 1.6;
+  }
+
+  main.article {
+    padding: 40px 48px;
+  }
+  main.article .kicker { color: #6c7b73; font-size: 12px; margin-bottom: 10px; }
+  main.article h1 { font-size: 30px; line-height: 1.4; margin: 0 0 16px; color: #202a26; }
+  main.article .byline { color: #7c8580; font-size: 12px; margin-bottom: 24px; }
+  main.article p { font-size: 16px; line-height: 1.9; color: #3b4540; margin: 0 0 18px; }
+
+  .related-recommend {
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+  }
+  .related-recommend h4 { font-size: 13px; color: #6a756e; }
+  .related-recommend .item { padding: 10px 0; font-size: 13px; color: #56625c; border-top: 1px solid #eee; }
+
+  .comment-section {
+    margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+  }
+  .comment-section h4 { font-size: 13px; color: #6a756e; }
+  .comment-section .item { padding: 10px 0; font-size: 13px; color: #56625c; }
+
+  .fake-aside-right {
+    background: #fafbfa; border-left: 1px solid #edf0ec; padding: 24px 18px;
+  }
+  .promo-banner-inline {
+    background: repeating-linear-gradient(120deg, #536660, #536660 2px, #455751 2px 4px);
+    color: #e8f0ec; height: 120px; padding: 16px; font-size: 14px; margin-bottom: 20px;
+  }
+  .fake-aside-right .recommend-card {
+    font-size: 12px; color: #56625c; padding: 10px 0; border-top: 1px solid #e5e9e4;
+  }
+
+  footer.fake-footer {
+    background: #1e2723; color: #97a29c; padding: 30px 48px; font-size: 12px; grid-column: 1 / -1;
+  }
+</style>
+</head>
+<body>
+
+  <div class="demo-hint">
+    这是一个模拟的"普通网页"，用来演示缓读插件效果 —— <b id="open-panel-btn">点击这里打开缓读面板</b>
+  </div>
+
+  <div class="fake-banner">🔥 限时促销广告横幅 · 立即购买享 8 折优惠 · advert-banner</div>
+
+  <nav class="fake-site-nav">
+    <span class="logo">FakeNews 日报</span>
+    <a href="#">首页</a><a href="#">科技</a><a href="#">财经</a><a href="#">生活</a><a href="#">视频</a>
+  </nav>
+
+  <div class="fake-layout">
+    <aside class="fake-sidebar">
+      <h4>热门分类</h4>
+      <p>科技前沿</p><p>财经观察</p><p>生活方式</p><p>深度报道</p>
+      <div class="ad-block advert-block">
+        <em>广告推广</em><br />
+        这是一段侧边栏广告文案，用来测试降噪功能是否能正确识别并隐藏它。
+      </div>
+    </aside>
+
+    <main class="article">
+      <p class="kicker">科技 · 深度</p>
+      <h1>为什么"无干扰阅读"正在成为新的产品设计趋势</h1>
+      <p class="byline">作者：编辑部 · 5 分钟阅读</p>
+
+      <p>过去十年，互联网内容平台在商业化压力下不断堆叠推荐位、悬浮广告、订阅弹窗与社交分享按钮，用户的注意力被切割得越来越碎。对于注意力容易被打断的用户（例如 ADHD 群体）来说，这种"信息过载"的网页设计几乎是不友好的。</p>
+
+      <p>"缓读"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
+
+      <p>技术实现上，正文识别通常借助 Mozilla 开源的 Readability.js（Firefox 阅读模式同款算法），通过文本密度、链接密度、DOM 结构等特征打分，定位出页面中"最像正文"的区块。而干扰元素的识别，则可以用一组启发式规则——常见的广告、侧边栏、评论区、弹窗横幅在类名、标签语义上都有较强的规律性，可以在不依赖机器学习的情况下达到不错的准确率。</p>
+
+      <p>本 Demo 页面故意包含了顶部促销横幅、左侧广告栏、右侧推荐视频卡片与底部评论区，用来直观演示"降噪"功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
+
+      <div class="related-recommend">
+        <h4>相关推荐</h4>
+        <div class="item">《大厂如何设计无障碍阅读体验》</div>
+        <div class="item">《注意力经济下的产品伦理》</div>
+      </div>
+
+      <div class="comment-section">
+        <h4>评论区（3）</h4>
+        <div class="item">读者A：这个思路很实用，希望能支持更多网站。</div>
+        <div class="item">读者B：字号调节这个功能太需要了。</div>
+        <div class="item">读者C：降噪之后阅读体验确实好很多。</div>
+      </div>
+    </main>
+
+    <aside class="fake-aside-right">
+      <div class="promo-banner-inline">📺 推荐视频广告位</div>
+      <div class="recommend-card">今日热榜 #1：AI 写作工具测评</div>
+      <div class="recommend-card">今日热榜 #2：远程办公效率指南</div>
+      <div class="recommend-card">今日热榜 #3：极简主义生活方式</div>
+    </aside>
+
+    <footer class="fake-footer">
+      © 2026 FakeNews 日报 · 本页面仅用于演示，非真实新闻站点
+    </footer>
+  </div>
+
+  <!-- ---- Mock chrome.* API，让 content.js 在无插件环境下也能运行 ---- -->
+  <script>
+    (function () {
+      const memoryStore = {};
+      window.chrome = {
+        storage: {
+          sync: {
+            get(keys, callback) {
+              const result = {};
+              (Array.isArray(keys) ? keys : [keys]).forEach((k) => {
+                if (memoryStore[k] !== undefined) result[k] = memoryStore[k];
+              });
+              callback(result);
+            },
+            set(items, callback) {
+              Object.assign(memoryStore, items);
+              if (callback) callback();
+            },
+          },
+        },
+        runtime: {
+          onMessage: {
+            _listeners: [],
+            addListener(fn) {
+              this._listeners.push(fn);
+            },
+            _dispatch(msg) {
+              this._listeners.forEach((fn) => fn(msg));
+            },
+          },
+        },
+      };
+    })();
+  </script>
+
+  <script src="vendor/readability.js"></script>
+  <script src="src/content.js"></script>
+  <script>
+    document.getElementById('open-panel-btn').addEventListener('click', () => {
+      window.chrome.runtime.onMessage._dispatch({ type: 'HUANDU_TOGGLE_PANEL' });
+    });
+  </script>
+</body>
+</html>
