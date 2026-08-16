@@ -1,8 +1,8 @@
-// 缓读 · 降噪清理模块
+// INS_Reader · 降噪清理模块
 // 职责：维护降噪选择器规则组，对 DOM 克隆体执行清理（不触碰原页面）。
-// 依赖 Huandu.prefsStore 读取用户当前开启的降噪类别。
+// 依赖 INS_Reader.prefsStore 读取用户当前开启的降噪类别。
 
-window.Huandu = window.Huandu || {};
+window.INS_Reader = window.INS_Reader || {};
 
 (function () {
   const NOISE_GROUPS = {
@@ -15,20 +15,20 @@ window.Huandu = window.Huandu || {};
     marketing: ['[class*="vip-mask"]', '[class*="mask-dark"]', '[class*="article-vip"]', '[class*="openvippay"]', '[class*="unlogin"]', '[class*="login-mask"]'],
   };
 
-  function activeSelectors() {
-    const prefs = window.Huandu.prefsStore.get();
-    const groups = prefs.noiseOptions || window.Huandu.prefsStore.DEFAULT_PREFS.noiseOptions;
+  function INS_activeSelectors() {
+    const prefs = window.INS_Reader.prefsStore.get();
+    const groups = prefs.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
     return Object.keys(NOISE_GROUPS)
       .filter((key) => groups[key])
       .flatMap((key) => NOISE_GROUPS[key]);
   }
 
   // 返回移除的元素数量。cloneRoot 必须是克隆体，绝不作用于原始 DOM。
-  function stripNoiseFromClone(cloneRoot) {
-    const prefs = window.Huandu.prefsStore.get();
+  function INS_stripNoiseFromClone(cloneRoot) {
+    const prefs = window.INS_Reader.prefsStore.get();
     if (!prefs.noiseReduction) return 0;
     let count = 0;
-    for (const selector of activeSelectors()) {
+    for (const selector of INS_activeSelectors()) {
       cloneRoot.querySelectorAll(selector).forEach((el) => {
         el.remove();
         count += 1;
@@ -37,8 +37,8 @@ window.Huandu = window.Huandu || {};
     return count;
   }
 
-  window.Huandu.noiseFilter = {
+  window.INS_Reader.noiseFilter = {
     NOISE_GROUPS,
-    stripNoiseFromClone,
+    stripNoiseFromClone: INS_stripNoiseFromClone,
   };
 })();

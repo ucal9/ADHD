@@ -1,11 +1,11 @@
-// 缓读 · 偏好存取模块
+// INS_Reader · 偏好存取模块
 // 职责：定义默认偏好结构、从 chrome.storage.sync 加载/保存用户设置。
-// 不依赖其他缓读模块，是最底层的模块。
+// 不依赖其他 INS_Reader 模块，是最底层的模块。
 
-window.Huandu = window.Huandu || {};
+window.INS_Reader = window.INS_Reader || {};
 
 (function () {
-  const STORAGE_KEY = 'huandu_prefs_v1';
+  const STORAGE_KEY = 'ins_reader_prefs_v1';
 
   const DEFAULT_PREFS = {
     enabled: false,
@@ -23,7 +23,7 @@ window.Huandu = window.Huandu || {};
 
   const state = { prefs: { ...DEFAULT_PREFS } };
 
-  function load() {
+  function INS_load() {
     return new Promise((resolve) => {
       chrome.storage.sync.get([STORAGE_KEY], (result) => {
         const stored = result[STORAGE_KEY] || {};
@@ -35,25 +35,25 @@ window.Huandu = window.Huandu || {};
         };
         if (!state.prefs.deviceId) {
           state.prefs.deviceId = crypto.randomUUID();
-          save();
+          INS_save();
         }
         resolve(state.prefs);
       });
     });
   }
 
-  function save() {
+  function INS_save() {
     chrome.storage.sync.set({ [STORAGE_KEY]: state.prefs });
   }
 
-  function get() {
+  function INS_get() {
     return state.prefs;
   }
 
-  window.Huandu.prefsStore = {
+  window.INS_Reader.prefsStore = {
     DEFAULT_PREFS,
-    load,
-    save,
-    get,
+    load: INS_load,
+    save: INS_save,
+    get: INS_get,
   };
 })();

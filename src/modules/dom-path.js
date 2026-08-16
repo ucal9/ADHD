@@ -1,11 +1,11 @@
-// 缓读 · DOM 路径工具模块
+// INS_Reader · DOM 路径工具模块
 // 职责：记录节点相对某个祖先的子节点下标路径，用于在克隆后的树里重新定位同一个节点。
-// 纯函数工具，不依赖任何缓读状态或其他模块。
+// 纯函数工具，不依赖任何 INS_Reader 状态或其他模块。
 
-window.Huandu = window.Huandu || {};
+window.INS_Reader = window.INS_Reader || {};
 
 (function () {
-  function getChildIndexPath(node, root) {
+  function INS_getChildIndexPath(node, root) {
     const path = [];
     let current = node;
     while (current && current !== root) {
@@ -17,7 +17,7 @@ window.Huandu = window.Huandu || {};
     return current === root ? path : null;
   }
 
-  function resolveChildIndexPath(root, path) {
+  function INS_resolveChildIndexPath(root, path) {
     let current = root;
     for (const index of path) {
       current = current && current.childNodes[index];
@@ -26,8 +26,8 @@ window.Huandu = window.Huandu || {};
     return current;
   }
 
-  window.Huandu.domPath = {
-    getChildIndexPath,
-    resolveChildIndexPath,
+  window.INS_Reader.domPath = {
+    getChildIndexPath: INS_getChildIndexPath,
+    resolveChildIndexPath: INS_resolveChildIndexPath,
   };
 })();

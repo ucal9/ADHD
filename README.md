@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌿 缓读
+# 🌿 INS_Reader
 
 ### 把任意网页调成适合你的阅读节奏
 
@@ -19,7 +19,7 @@
 
 网页正文常常被广告、侧边栏、评论区、弹窗淹没——对注意力容易分散的读者来说，这种视觉噪音会显著打断阅读节奏。
 
-**缓读** 是一个 Chrome 浏览器插件：一键把任意网页转换成干净、专注、可自定义的沉浸阅读层，**不修改原网页 DOM，随时可恢复**。
+**INS_Reader** 是一个 Chrome 浏览器插件：一键把任意网页转换成干净、专注、可自定义的沉浸阅读层，**不修改原网页 DOM，随时可恢复**。
 
 <table>
 <tr>
@@ -72,8 +72,8 @@ git clone git@github.com:ucal9/ADHD.git
 
 1. 打开 Chrome，访问 `chrome://extensions`
 2. 打开右上角 **开发者模式**
-3. 点击 **加载已解压的扩展程序**，选择克隆下来的 `huandu-extension` 目录
-4. 打开任意网页，点击工具栏里的缓读图标 🌿，或点击弹出页的「打开阅读面板」
+3. 点击 **加载已解压的扩展程序**，选择克隆下来的目录
+4. 打开任意网页，点击工具栏里的 INS_Reader 图标 🌿，或点击弹出页的「打开阅读面板」
 
 > ⚠️ Chrome 内置页面（如 `chrome://extensions` 本身）出于安全策略，任何插件都无法在其上注入内容脚本，这是预期行为。
 
@@ -94,7 +94,7 @@ open demo.html
 ## 🏗️ 技术架构
 
 ```
-huandu-extension/
+ins-reader-extension/
 ├── manifest.json          # Chrome 扩展入口配置（MV3）
 ├── demo.html              # 独立测试页，模拟 chrome.* API
 ├── icons/                 # 插件图标

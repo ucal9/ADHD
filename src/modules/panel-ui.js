@@ -1,9 +1,9 @@
-// 缓读 · 设置面板模块
+// INS_Reader · 设置面板模块
 // 职责：渲染用户设置面板（主题/字号/宽度/降噪开关），Shadow DOM 隔离样式。
-// 依赖 Huandu.prefsStore / noiseFilter / readerLayer。面板自身不决定"是否应用"，
-// 只负责收集用户输入后回调 Huandu.appController 提供的 applyAll/restore。
+// 依赖 INS_Reader.prefsStore / noiseFilter / readerLayer。面板自身不决定"是否应用"，
+// 只负责收集用户输入后回调 INS_Reader.appController 提供的 applyAll/restore。
 
-window.Huandu = window.Huandu || {};
+window.INS_Reader = window.INS_Reader || {};
 
 (function () {
   const FONT_MIN = 14;
@@ -15,10 +15,10 @@ window.Huandu = window.Huandu || {};
 
   const state = { panelHost: null };
 
-  function ensurePanelHost() {
+  function INS_ensurePanelHost() {
     if (state.panelHost) return state.panelHost;
     state.panelHost = document.createElement('div');
-    state.panelHost.id = 'huandu-panel-host';
+    state.panelHost.id = 'ins-reader-panel-host';
     state.panelHost.style.position = 'fixed';
     state.panelHost.style.top = '0';
     state.panelHost.style.left = '0';
@@ -29,37 +29,37 @@ window.Huandu = window.Huandu || {};
     return state.panelHost;
   }
 
-  function updateNoiseCount(count) {
+  function INS_updateNoiseCount(count) {
     const shadow = state.panelHost && state.panelHost.shadowRoot;
     if (!shadow) return;
     const countEl = shadow.querySelector('[data-role="noise-count"]');
     if (countEl) countEl.textContent = String(count);
   }
 
-  function toggle() {
-    const host = ensurePanelHost();
+  function INS_toggle() {
+    const host = INS_ensurePanelHost();
     const shadow = host.shadowRoot;
-    const existing = shadow && shadow.querySelector('.huandu-panel');
+    const existing = shadow && shadow.querySelector('.ins-reader-panel');
     if (existing) {
-      close(existing);
+      INS_close(existing);
       return;
     }
-    render();
+    INS_render();
   }
 
-  function close(panelEl) {
+  function INS_close(panelEl) {
     panelEl.classList.add('closing');
     panelEl.addEventListener('animationend', () => panelEl.remove(), { once: true });
   }
 
-  function render() {
-    const { prefsStore, noiseFilter, readerLayer, appController } = window.Huandu;
+  function INS_render() {
+    const { prefsStore, noiseFilter, readerLayer, appController } = window.INS_Reader;
     const prefs = prefsStore.get();
 
-    const host = ensurePanelHost();
+    const host = INS_ensurePanelHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
-    const isFirstOpen = !shadow.querySelector('.huandu-panel');
+    const isFirstOpen = !shadow.querySelector('.ins-reader-panel');
     shadow.innerHTML = '';
 
     const style = document.createElement('style');
@@ -69,10 +69,10 @@ window.Huandu = window.Huandu || {};
     const noiseLabels = { ads: '广告', sidebar: '侧边栏/导航', comments: '评论区', banners: '弹窗/横幅', marketing: '会员/登录推销' };
 
     const panel = document.createElement('div');
-    panel.className = isFirstOpen ? 'huandu-panel opening' : 'huandu-panel';
+    panel.className = isFirstOpen ? 'ins-reader-panel opening' : 'ins-reader-panel';
     panel.innerHTML = `
       <div class="panel-top">
-        <div class="brand">缓读</div>
+        <div class="brand">INS_Reader</div>
         <button class="close-btn" data-role="close" aria-label="关闭">×</button>
       </div>
       <p class="tagline">把阅读调成适合你的样子</p>
@@ -144,7 +144,7 @@ window.Huandu = window.Huandu || {};
         <button class="switch ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-switch"><span></span></button>
       </div>
       <div class="ai-settings ${prefs.aiEnabled ? '' : 'disabled'}" data-role="ai-settings">
-        <p class="ai-hint">正文将发送到缓读后端生成摘要，不会用于其他用途。</p>
+        <p class="ai-hint">正文将发送到 INS_Reader 后端生成摘要，不会用于其他用途。</p>
         <button class="ai-generate" data-role="ai-generate">${readerLayer.getSummary() ? '重新生成摘要' : '生成摘要'}</button>
         <div class="ai-progress" data-role="ai-progress" hidden><div class="ai-progress-bar"></div></div>
         <p class="ai-status" data-role="ai-status"></p>
@@ -155,7 +155,7 @@ window.Huandu = window.Huandu || {};
     shadow.appendChild(panel);
 
     // 事件绑定
-    panel.querySelector('[data-role="close"]').addEventListener('click', () => close(panel));
+    panel.querySelector('[data-role="close"]').addEventListener('click', () => INS_close(panel));
 
     panel.querySelectorAll('[data-theme]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -163,7 +163,7 @@ window.Huandu = window.Huandu || {};
         prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
-        render();
+        INS_render();
       });
     });
 
@@ -182,12 +182,12 @@ window.Huandu = window.Huandu || {};
     }
 
     const fontInput = panel.querySelector('[data-role="font-size"]');
-    function setFontSize(value) {
+    function INS_setFontSize(value) {
       prefs.fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, value));
       prefs.enabled = true;
       appController.applyAll();
       prefsStore.save();
-      render();
+      INS_render();
     }
     fontInput.addEventListener('input', () => {
       prefs.fontSize = Number(fontInput.value);
@@ -196,8 +196,8 @@ window.Huandu = window.Huandu || {};
       appController.applyAll();
     });
     fontInput.addEventListener('change', prefsStore.save);
-    panel.querySelector('[data-role="font-minus"]').addEventListener('click', () => setFontSize(prefs.fontSize - 1));
-    panel.querySelector('[data-role="font-plus"]').addEventListener('click', () => setFontSize(prefs.fontSize + 1));
+    panel.querySelector('[data-role="font-minus"]').addEventListener('click', () => INS_setFontSize(prefs.fontSize - 1));
+    panel.querySelector('[data-role="font-plus"]').addEventListener('click', () => INS_setFontSize(prefs.fontSize + 1));
 
     panel.querySelectorAll('[data-width]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -205,7 +205,7 @@ window.Huandu = window.Huandu || {};
         prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
-        render();
+        INS_render();
       });
     });
 
@@ -231,7 +231,7 @@ window.Huandu = window.Huandu || {};
       prefs.noiseReduction = !prefs.noiseReduction;
       prefsStore.save();
       appController.applyAll();
-      render();
+      INS_render();
     });
 
     panel.querySelectorAll('[data-noise-key]').forEach((btn) => {
@@ -240,7 +240,7 @@ window.Huandu = window.Huandu || {};
         prefs.noiseOptions[key] = !prefs.noiseOptions[key];
         prefsStore.save();
         appController.applyAll();
-        render();
+        INS_render();
       });
     });
 
@@ -249,14 +249,14 @@ window.Huandu = window.Huandu || {};
     panel.querySelector('[data-role="ai-switch"]').addEventListener('click', () => {
       prefs.aiEnabled = !prefs.aiEnabled;
       prefsStore.save();
-      render();
+      INS_render();
     });
 
     const statusEl = panel.querySelector('[data-role="ai-status"]');
     const generateBtn = panel.querySelector('[data-role="ai-generate"]');
     const progressEl = panel.querySelector('[data-role="ai-progress"]');
     generateBtn.addEventListener('click', async () => {
-      const { aiClient } = window.Huandu;
+      const { aiClient } = window.INS_Reader;
       const articleText = readerLayer.getArticleText();
       if (!articleText) {
         statusEl.textContent = '未找到正文内容';
@@ -280,7 +280,7 @@ window.Huandu = window.Huandu || {};
         const summary = await aiClient.summarize(articleText);
         readerLayer.setSummary(summary);
         appController.applyAll();
-        render();
+        INS_render();
       } catch (err) {
         statusEl.classList.add('error');
         statusEl.textContent = err.message || 'AI 摘要生成失败';
@@ -294,7 +294,7 @@ window.Huandu = window.Huandu || {};
 
   const PANEL_CSS = `
     :host { all: initial; }
-    .huandu-panel {
+    .ins-reader-panel {
       position: fixed;
       top: 78px;
       right: 18px;
@@ -309,13 +309,13 @@ window.Huandu = window.Huandu || {};
       box-shadow: 0 18px 46px rgba(37, 59, 51, 0.12);
       transform-origin: top right;
     }
-    .huandu-panel.opening { animation: huandu-in 0.16s ease-out; }
-    .huandu-panel.closing { animation: huandu-out 0.14s ease-in forwards; }
-    @keyframes huandu-in {
+    .ins-reader-panel.opening { animation: ins-reader-in 0.16s ease-out; }
+    .ins-reader-panel.closing { animation: ins-reader-out 0.14s ease-in forwards; }
+    @keyframes ins-reader-in {
       from { opacity: 0; transform: scale(0.96) translateY(-4px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
-    @keyframes huandu-out {
+    @keyframes ins-reader-out {
       from { opacity: 1; transform: scale(1) translateY(0); }
       to { opacity: 0; transform: scale(0.96) translateY(-4px); }
     }
@@ -387,8 +387,8 @@ window.Huandu = window.Huandu || {};
     .ai-generate:hover:not(:disabled) { background: #eaf5f0; }
     .ai-generate:disabled { opacity: 0.6; cursor: default; }
     .ai-progress { margin: 8px 0 0; height: 3px; border-radius: 999px; background: #e3ece7; overflow: hidden; }
-    .ai-progress-bar { width: 40%; height: 100%; border-radius: 999px; background: #1f8b7d; animation: huandu-ai-progress 1.1s ease-in-out infinite; }
-    @keyframes huandu-ai-progress {
+    .ai-progress-bar { width: 40%; height: 100%; border-radius: 999px; background: #1f8b7d; animation: ins-reader-ai-progress 1.1s ease-in-out infinite; }
+    @keyframes ins-reader-ai-progress {
       0% { transform: translateX(-100%); }
       100% { transform: translateX(250%); }
     }
@@ -402,9 +402,9 @@ window.Huandu = window.Huandu || {};
     .restore:hover { background: #f6f8f5; }
   `;
 
-  window.Huandu.panelUI = {
-    toggle,
-    render,
-    updateNoiseCount,
+  window.INS_Reader.panelUI = {
+    toggle: INS_toggle,
+    render: INS_render,
+    updateNoiseCount: INS_updateNoiseCount,
   };
 })();

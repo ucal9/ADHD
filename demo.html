@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<title>缓读 · Demo（模拟网页 + 插件面板）</title>
+<title>INS_Reader · Demo（模拟网页 + 插件面板）</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; background: #e9ece8; }
@@ -76,7 +76,7 @@
 <body>
 
   <div class="demo-hint">
-    这是一个模拟的"普通网页"，用来演示缓读插件效果 —— <b id="open-panel-btn">点击这里打开缓读面板</b>
+    这是一个模拟的"普通网页"，用来演示 INS_Reader 插件效果 —— <b id="open-panel-btn">点击这里打开 INS_Reader 面板</b>
   </div>
 
   <div class="fake-banner">🔥 限时促销广告横幅 · 立即购买享 8 折优惠 · advert-banner</div>
@@ -103,7 +103,7 @@
 
       <p>过去十年，互联网内容平台在商业化压力下不断堆叠推荐位、悬浮广告、订阅弹窗与社交分享按钮，用户的注意力被切割得越来越碎。对于注意力容易被打断的用户（例如 ADHD 群体）来说，这种"信息过载"的网页设计几乎是不友好的。</p>
 
-      <p>"缓读"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
+      <p>"INS_Reader"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
 
       <p>技术实现上，正文识别通常借助 Mozilla 开源的 Readability.js（Firefox 阅读模式同款算法），通过文本密度、链接密度、DOM 结构等特征打分，定位出页面中"最像正文"的区块。而干扰元素的识别，则可以用一组启发式规则——常见的广告、侧边栏、评论区、弹窗横幅在类名、标签语义上都有较强的规律性，可以在不依赖机器学习的情况下达到不错的准确率。</p>
 
@@ -168,7 +168,7 @@
           // demo 环境没有真正的 background service worker，这里直接模拟它
           // 转发请求的效果：file:// 页面没有 CSP 限制，可以直接 fetch。
           async sendMessage(msg) {
-            if (msg?.type !== 'HUANDU_AI_SUMMARIZE') return null;
+            if (msg?.type !== 'INS_READER_AI_SUMMARIZE') return null;
             try {
               const resp = await fetch('http://localhost:8000/v1/ai/summarize', {
                 method: 'POST',
@@ -202,7 +202,7 @@
   <script src="src/content.js"></script>
   <script>
     document.getElementById('open-panel-btn').addEventListener('click', () => {
-      window.chrome.runtime.onMessage._dispatch({ type: 'HUANDU_TOGGLE_PANEL' });
+      window.chrome.runtime.onMessage._dispatch({ type: 'INS_READER_TOGGLE_PANEL' });
     });
   </script>
 </body>

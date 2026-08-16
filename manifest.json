@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "缓读 · 无干扰阅读模式",
+  "name": "INS_Reader · 无干扰阅读模式",
   "version": "0.1.0",
   "description": "把任意网页调成适合你的阅读节奏：净化排版、隐藏干扰元素、自定义字号与主题。",
   "icons": {
@@ -11,7 +11,7 @@
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["http://localhost:8000/*"],
   "action": {
-    "default_title": "缓读",
+    "default_title": "INS_Reader",
     "default_popup": "src/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

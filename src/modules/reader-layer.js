@@ -1,9 +1,9 @@
-// 缓读 · 沉浸阅读层模块
+// INS_Reader · 沉浸阅读层模块
 // 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
 // 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
-// 依赖 Huandu.prefsStore / articleLocator / noiseFilter / domPath。
+// 依赖 INS_Reader.prefsStore / articleLocator / noiseFilter / domPath。
 
-window.Huandu = window.Huandu || {};
+window.INS_Reader = window.INS_Reader || {};
 
 (function () {
   const THEMES = {
@@ -21,10 +21,10 @@ window.Huandu = window.Huandu || {};
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()
   };
 
-  function ensureReaderHost() {
+  function INS_ensureReaderHost() {
     if (state.readerHost) return state.readerHost;
     state.readerHost = document.createElement('div');
-    state.readerHost.id = 'huandu-reader-host';
+    state.readerHost.id = 'ins-reader-host';
     state.readerHost.style.position = 'fixed';
     state.readerHost.style.top = '0';
     state.readerHost.style.left = '0';
@@ -35,23 +35,23 @@ window.Huandu = window.Huandu || {};
     return state.readerHost;
   }
 
-  function lockOriginalPage() {
+  function INS_lockOriginalPage() {
     if (state.bodyOverflowBackup === null) {
       state.bodyOverflowBackup = document.documentElement.style.overflow;
     }
     document.documentElement.style.overflow = 'hidden';
   }
 
-  function unlockOriginalPage() {
+  function INS_unlockOriginalPage() {
     document.documentElement.style.overflow = state.bodyOverflowBackup || '';
     state.bodyOverflowBackup = null;
   }
 
-  function render() {
-    const { articleLocator, noiseFilter, domPath, prefsStore, readingStats } = window.Huandu;
+  function INS_render() {
+    const { articleLocator, noiseFilter, domPath, prefsStore, readingStats } = window.INS_Reader;
     const prefs = prefsStore.get();
 
-    const host = ensureReaderHost();
+    const host = INS_ensureReaderHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = '';
@@ -79,24 +79,24 @@ window.Huandu = window.Huandu || {};
 
     const style = document.createElement('style');
     style.textContent = `
-      .huandu-reader-overlay {
+      .ins-reader-overlay {
         position: fixed; inset: 0; z-index: 1;
         background: ${theme.bg};
         overflow-y: auto;
         font-family: "Noto Sans SC", -apple-system, sans-serif;
       }
-      .huandu-reader-progress-track {
+      .ins-reader-progress-track {
         position: sticky; top: 0; z-index: 2;
         height: 3px;
         background: rgba(0,0,0,0.06);
       }
-      .huandu-reader-progress-bar {
+      .ins-reader-progress-bar {
         height: 100%;
         width: 0%;
         background: ${theme.accent};
         transition: width 0.1s linear;
       }
-      .huandu-reader-time {
+      .ins-reader-time {
         position: sticky; top: 3px; z-index: 2;
         text-align: right;
         padding: 6px 24px 0;
@@ -104,7 +104,7 @@ window.Huandu = window.Huandu || {};
         color: ${theme.accent};
         background: ${theme.bg};
       }
-      .huandu-reader-article {
+      .ins-reader-article {
         max-width: ${maxWidth};
         margin: 0 auto;
         padding: 20px 24px 80px;
@@ -113,9 +113,9 @@ window.Huandu = window.Huandu || {};
         line-height: ${prefs.lineHeight};
         letter-spacing: ${prefs.letterSpacing}em;
       }
-      .huandu-reader-article a { color: ${theme.accent}; }
-      .huandu-reader-article img { max-width: 100%; height: auto; }
-      .huandu-reader-summary {
+      .ins-reader-article a { color: ${theme.accent}; }
+      .ins-reader-article img { max-width: 100%; height: auto; }
+      .ins-reader-summary {
         margin: 0 0 28px;
         padding: 14px 18px;
         border-radius: 8px;
@@ -125,38 +125,38 @@ window.Huandu = window.Huandu || {};
         line-height: 1.7;
         letter-spacing: 0;
       }
-      .huandu-reader-summary-title {
+      .ins-reader-summary-title {
         font-weight: 600;
         color: ${theme.accent};
         margin: 0 0 6px;
       }
-      .huandu-reader-summary-body { white-space: pre-line; }
+      .ins-reader-summary-body { white-space: pre-line; }
     `;
     shadow.appendChild(style);
 
     const overlay = document.createElement('div');
-    overlay.className = 'huandu-reader-overlay';
+    overlay.className = 'ins-reader-overlay';
 
     const progressTrack = document.createElement('div');
-    progressTrack.className = 'huandu-reader-progress-track';
+    progressTrack.className = 'ins-reader-progress-track';
     const progressBar = document.createElement('div');
-    progressBar.className = 'huandu-reader-progress-bar';
+    progressBar.className = 'ins-reader-progress-bar';
     progressTrack.appendChild(progressBar);
     overlay.appendChild(progressTrack);
 
     const timeEl = document.createElement('div');
-    timeEl.className = 'huandu-reader-time';
+    timeEl.className = 'ins-reader-time';
     const totalMinutes = readingStats.estimateMinutes(clone.textContent || '');
     timeEl.textContent = `预计阅读 ${readingStats.formatMinutes(totalMinutes)}`;
     overlay.appendChild(timeEl);
 
     const articleWrap = document.createElement('div');
-    articleWrap.className = 'huandu-reader-article';
+    articleWrap.className = 'ins-reader-article';
     if (state.summaryText) {
       const summaryEl = document.createElement('div');
-      summaryEl.className = 'huandu-reader-summary';
-      summaryEl.innerHTML = `<p class="huandu-reader-summary-title">AI 摘要</p><p class="huandu-reader-summary-body"></p>`;
-      summaryEl.querySelector('.huandu-reader-summary-body').textContent = state.summaryText;
+      summaryEl.className = 'ins-reader-summary';
+      summaryEl.innerHTML = `<p class="ins-reader-summary-title">AI 摘要</p><p class="ins-reader-summary-body"></p>`;
+      summaryEl.querySelector('.ins-reader-summary-body').textContent = state.summaryText;
       articleWrap.appendChild(summaryEl);
     }
     articleWrap.appendChild(clone);
@@ -177,42 +177,42 @@ window.Huandu = window.Huandu || {};
     });
   }
 
-  function remove() {
+  function INS_remove() {
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;
     }
   }
 
-  function getHiddenCount() {
+  function INS_getHiddenCount() {
     return state.hiddenCount;
   }
 
-  function setOnHiddenCountChange(callback) {
+  function INS_setOnHiddenCountChange(callback) {
     state.onHiddenCountChange = callback;
   }
 
-  function getArticleText() {
+  function INS_getArticleText() {
     return state.articleText;
   }
 
-  function setSummary(text) {
+  function INS_setSummary(text) {
     state.summaryText = text || '';
   }
 
-  function getSummary() {
+  function INS_getSummary() {
     return state.summaryText;
   }
 
-  window.Huandu.readerLayer = {
-    render,
-    remove,
-    lockOriginalPage,
-    unlockOriginalPage,
-    getHiddenCount,
-    setOnHiddenCountChange,
-    getArticleText,
-    setSummary,
-    getSummary,
+  window.INS_Reader.readerLayer = {
+    render: INS_render,
+    remove: INS_remove,
+    lockOriginalPage: INS_lockOriginalPage,
+    unlockOriginalPage: INS_unlockOriginalPage,
+    getHiddenCount: INS_getHiddenCount,
+    setOnHiddenCountChange: INS_setOnHiddenCountChange,
+    getArticleText: INS_getArticleText,
+    setSummary: INS_setSummary,
+    getSummary: INS_getSummary,
   };
 })();
