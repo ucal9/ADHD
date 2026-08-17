@@ -9,6 +9,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["http://localhost:8000/*"],
   "action": {
     "default_title": "缓读",
     "default_popup": "src/popup.html",
@@ -24,7 +25,18 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["vendor/readability.js", "src/content.js"],
+      "js": [
+        "vendor/readability.js",
+        "src/modules/prefs-store.js",
+        "src/modules/article-locator.js",
+        "src/modules/noise-filter.js",
+        "src/modules/dom-path.js",
+        "src/modules/reading-stats.js",
+        "src/modules/ai-client.js",
+        "src/modules/reader-layer.js",
+        "src/modules/panel-ui.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

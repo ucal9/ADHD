@@ -165,12 +165,40 @@
               this._listeners.forEach((fn) => fn(msg));
             },
           },
+          // demo 环境没有真正的 background service worker，这里直接模拟它
+          // 转发请求的效果：file:// 页面没有 CSP 限制，可以直接 fetch。
+          async sendMessage(msg) {
+            if (msg?.type !== 'HUANDU_AI_SUMMARIZE') return null;
+            try {
+              const resp = await fetch('http://localhost:8000/v1/ai/summarize', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(msg.payload),
+              });
+              const body = await resp.json().catch(() => null);
+              if (!resp.ok) {
+                const detail = (body && body.detail) || `AI 服务出错（${resp.status}）`;
+                return { ok: false, status: resp.status, detail };
+              }
+              return { ok: true, result: body.result };
+            } catch (err) {
+              return { ok: false, status: 0, detail: '无法连接 AI 服务，请确认后端已启动' };
+            }
+          },
         },
       };
     })();
   </script>
 
   <script src="vendor/readability.js"></script>
+  <script src="src/modules/prefs-store.js"></script>
+  <script src="src/modules/article-locator.js"></script>
+  <script src="src/modules/noise-filter.js"></script>
+  <script src="src/modules/dom-path.js"></script>
+  <script src="src/modules/reading-stats.js"></script>
+  <script src="src/modules/ai-client.js"></script>
+  <script src="src/modules/reader-layer.js"></script>
+  <script src="src/modules/panel-ui.js"></script>
   <script src="src/content.js"></script>
   <script>
     document.getElementById('open-panel-btn').addEventListener('click', () => {
