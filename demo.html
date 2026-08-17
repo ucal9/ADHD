@@ -1,3 +1,4 @@
+<!-- Copyright (c) 2026 Insta360. All rights reserved. -->
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -156,6 +157,7 @@
           },
         },
         runtime: {
+          id: 'demo-mock',
           onMessage: {
             _listeners: [],
             addListener(fn) {
@@ -168,20 +170,45 @@
           // demo 环境没有真正的 background service worker，这里直接模拟它
           // 转发请求的效果：file:// 页面没有 CSP 限制，可以直接 fetch。
           async sendMessage(msg) {
-            if (msg?.type !== 'INS_READER_AI_SUMMARIZE') return null;
+            const startedAt = performance.now();
+            console.log('[INS_Reader][demo-mock] sendMessage 被调用', {
+              runtimeId: this.id,
+              messageType: msg && msg.type,
+              textLength: msg && msg.payload ? msg.payload.text.length : undefined,
+              href: location.href,
+              origin: location.origin,
+            });
+            if (msg?.type !== 'INS_READER_AI_SUMMARIZE') {
+              console.log('[INS_Reader][demo-mock] 非摘要消息，直接返回 null');
+              return null;
+            }
             try {
+              console.log('[INS_Reader][demo-mock] 准备 fetch 后端');
               const resp = await fetch('http://localhost:8000/v1/ai/summarize', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify(msg.payload),
               });
               const body = await resp.json().catch(() => null);
+              console.log('[INS_Reader][demo-mock] fetch 返回', {
+                elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+                status: resp.status,
+                ok: resp.ok,
+              });
               if (!resp.ok) {
                 const detail = (body && body.detail) || `AI 服务出错（${resp.status}）`;
                 return { ok: false, status: resp.status, detail };
               }
+              console.log('[INS_Reader][demo-mock] 摘要成功', {
+                resultLength: body && body.result ? body.result.length : undefined,
+              });
               return { ok: true, result: body.result };
             } catch (err) {
+              console.error('[INS_Reader][demo-mock] fetch 失败', {
+                elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+                name: err && err.name,
+                message: err && err.message,
+              });
               return { ok: false, status: 0, detail: '无法连接 AI 服务，请确认后端已启动' };
             }
           },

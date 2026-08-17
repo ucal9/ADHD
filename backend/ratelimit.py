@@ -1,6 +1,9 @@
-"""缓读 · 简单限流工具
+"""Copyright (c) 2026 Insta360. All rights reserved.
+
+缓读 · 简单限流工具
 职责：按 device_id 做滑动窗口限流，内存实现，单进程 MVP 够用。
 不依赖数据库；进程重启后计数清零，这是当前 MVP 阶段可接受的取舍。
+调用者：仅 routers/ai.py 的 summarize_endpoint()，在调用 LLM 前先判断 is_allowed()。
 """
 
 import time

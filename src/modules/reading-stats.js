@@ -1,6 +1,9 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 阅读统计模块
 // 职责：根据正文文本估算总阅读时长，并按滚动位置计算已读进度。
 // 纯函数工具，不依赖其他 INS_Reader 模块。
+// 调用者：仅 reader-layer.js 的 render()——渲染时调用 estimateMinutes()
+// 算出总时长，滚动事件回调里调用 computeProgress() 更新进度条。
 
 window.INS_Reader = window.INS_Reader || {};
 

@@ -1,6 +1,10 @@
-"""缓读 · 后端服务入口
+"""Copyright (c) 2026 Insta360. All rights reserved.
+
+缓读 · 后端服务入口
 职责：注册路由、配置 CORS（只允许 Chrome 扩展 origin，以及本地 demo.html 调试环境访问）。
 后端只做增值（AI 摘要代理），核心阅读功能完全在前端本地完成，不依赖此服务。
+调用者：background.js 的 handleSummarize() 发起 POST /v1/ai/summarize，
+由 include_router(ai.router) 注册的 routers/ai.py 接住。
 """
 
 from dotenv import load_dotenv

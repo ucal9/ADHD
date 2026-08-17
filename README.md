@@ -7,7 +7,7 @@
 **无干扰阅读模式 · ADHD 友好设计 · Chrome 浏览器插件**
 
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-1f8b7d?style=flat-square)
+![License](https://img.shields.io/badge/license-Proprietary-b95042?style=flat-square)
 ![Status](https://img.shields.io/badge/status-MVP-orange?style=flat-square)
 ![Version](https://img.shields.io/badge/version-0.1.0-lightgrey?style=flat-square)
 
@@ -102,7 +102,7 @@ ins-reader-extension/
 │   └── readability.js     # Mozilla Readability.js v0.5.0
 ├── src/
 │   ├── content.js         # 顶层编排：串联各模块，处理插件消息与初始化
-│   ├── background.js      # service worker（当前为空壳，预留扩展）
+│   ├── background.js      # service worker：转发 AI 摘要请求（绕开 content script 的宿主页 CSP 限制）
 │   ├── popup.html / .js   # 工具栏入口页
 │   └── modules/
 │       ├── prefs-store.js      # 偏好存取（chrome.storage.sync）
@@ -142,6 +142,25 @@ flowchart LR
 | 样式隔离 | Shadow DOM（`:host { all: initial; }`） |
 | 数据持久化 | `chrome.storage.sync`，跨设备同步用户偏好 |
 | AI 摘要 | 后端代理调用 LLM API，前端不持有密钥（详见下节） |
+
+**前端模块调用关系**：各模块互不直接调用彼此，只经 `content.js` 收拢成一个星形结构（或直接读写共享的 `prefsStore`）：
+
+```
+popup.js ──chrome.tabs.sendMessage(INS_READER_TOGGLE_PANEL)──▶ content.js
+                                                                    │
+                                             onMessage 收到后调用    │
+                         ┌──────────────────────────────────────────┤
+                         ▼                                          ▼
+                appController.applyAll()                  panelUI.toggle()/render()
+                         │                                          │
+             readerLayer.render()                          用户操作面板控件：
+             （内部依次调用 articleLocator/                 - 改设置 → prefsStore.save()
+              domPath/noiseFilter/readingStats）              + appController.applyAll()
+                                                             - 点"生成摘要" → aiClient.summarize()
+                                                               + readerLayer.setSummary()
+```
+
+`readerLayer` 降噪完成后回调 `onHiddenCountChange` → `panelUI.updateNoiseCount()`，把隐藏元素数量实时同步到面板上——这是 `content.js` 在初始化时用 `readerLayer.setOnHiddenCountChange(panelUI.updateNoiseCount)` 绑定的唯一跨模块回调。
 
 **核心逻辑一：正文定位**
 
@@ -188,14 +207,36 @@ renderReaderLayer():
 
 **核心逻辑三：AI 摘要是怎么做出来的**
 
-AI 摘要功能背后有一个单独的小服务在跑（就是 `backend/` 这个目录），可以把它理解成一个"中间人"：插件本身不知道也不存的密钥，都放在这个中间人手里，插件只负责把文章内容发给它，它转手去问 AI（Anthropic 的 Claude 模型），拿到摘要后再传回插件。这样密钥不会跑到用户电脑上的插件代码里，更安全。
+AI 摘要功能背后有一个单独的小服务在跑（就是 `backend/` 这个目录），可以把它理解成一个"中间人"：插件本身不知道也不存的密钥，都放在这个中间人手里，插件只负责把文章内容发给它，它转手去问 AI（Anthropic 的 Claude 模型，或公司内部网关代理的同款模型），拿到摘要后再传回插件。这样密钥不会跑到用户电脑上的插件代码里，更安全。
 
-整个过程：
+完整调用链（跨越 3 个执行环境）：
 
-1. 用户点"生成摘要"，插件把当前文章的正文文字，连同一个随机生成的匿名标识（不含任何身份信息，只是用来防止被刷爆请求），发给这个中间人服务。
+```
+面板 UI（panel-ui.js，用户点"生成摘要"）
+    │  aiClient.summarize(articleText)
+    ▼
+ai-client.js（content script）
+    │  chrome.runtime.sendMessage({ type: 'INS_READER_AI_SUMMARIZE', payload })
+    ▼  ── 为什么要转一手：content script 的 fetch 会被宿主页面的 CSP
+    │     （如知乎等站点的 connect-src 白名单）拦截，很多站点会直接拒绝
+    │     插件对 localhost:8000 的请求
+    ▼
+background.js（service worker，独立执行上下文，不受宿主页 CSP 限制）
+    │  fetch('http://localhost:8000/v1/ai/summarize')
+    ▼
+backend/main.py → backend/routers/ai.py（FastAPI 路由）
+    │  ├─ ratelimit.is_allowed(device_id)     ← 限流判断
+    │  └─ services/llm_client.py.summarize()  ← 调用 LLM
+    ▼
+公司内部 LLM 网关 或 Anthropic 官方 API
+```
+
+具体过程：
+
+1. 用户点"生成摘要"，插件把当前文章的正文文字，连同一个随机生成的匿名标识（不含任何身份信息，只是用来防止被刷爆请求），一路转发给这个中间人服务。
 2. 中间人先检查这个标识最近一分钟有没有发太多次请求（超过 5 次就先拒绝，提示"请求过于频繁"），避免密钥被恶意刷爆。
-3. 没超限的话，中间人把文章内容打包成"请帮我用中文列 3-5 条要点摘要"这样的指令，发给 Claude，等它回复。
-4. 拿到摘要后，原样传回插件，插件把这段文字显示在阅读页面顶部的摘要卡片里。
+3. 没超限的话，中间人把文章内容打包成"请帮我用中文列 3-5 条要点摘要"这样的指令，发给 Claude（走公司网关或官方 API，取决于服务端配置了哪种密钥），等它回复。
+4. 拿到摘要后，原样沿着同一条链路原路传回插件，插件把这段文字显示在阅读页面顶部的摘要卡片里。
 
 如果这中间发生任何问题（网络断了、密钥没配置好、AI 服务没回应），插件会给出对应的提示文字，比如"无法连接 AI 服务"或"请稍后再试"，不会导致插件本身的阅读功能受影响——降噪、排版、字号这些核心功能完全不依赖这个服务，就算它挂了也照常能用，只是"AI 摘要"这一个按钮暂时用不了。
 
@@ -206,7 +247,7 @@ AI 摘要功能背后有一个单独的小服务在跑（就是 `backend/` 这�
 ```bash
 cd backend
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp .env.example .env   # 填入真实 ANTHROPIC_API_KEY
+cp .env.example .env   # 二选一填入：ANTHROPIC_API_KEY，或 ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
 ./venv/bin/uvicorn main:app --port 8000
 ```
 
@@ -221,11 +262,13 @@ cp .env.example .env   # 填入真实 ANTHROPIC_API_KEY
 
 | 文件 | 作用 |
 |---|---|
-| `src/modules/ai-client.js` | 插件侧发起请求，处理成功/失败的展示文案 |
-| `backend/main.py` | 服务入口，注册路由、配置 CORS |
+| `src/modules/panel-ui.js` | 用户点击"生成摘要"按钮的入口，调用 `aiClient.summarize()` |
+| `src/modules/ai-client.js` | 把请求通过 `chrome.runtime.sendMessage` 委托给 background |
+| `src/background.js` | service worker，实际发起 `fetch` 请求后端（绕开 content script 的 CSP 限制） |
+| `backend/main.py` | 服务入口，注册路由、配置 CORS 与 Local Network Access |
 | `backend/routers/ai.py` | 接口定义 `POST /v1/ai/summarize`，校验请求体、调用限流 |
 | `backend/ratelimit.py` | 按 `device_id` 做滑动窗口限流 |
-| `backend/services/llm_client.py` | 实际调用 Anthropic Messages API 的地方 |
+| `backend/services/llm_client.py` | 实际调用 LLM（网关或 Anthropic 官方 API）的地方 |
 
 **请求/响应格式**
 
@@ -239,16 +282,20 @@ Content-Type: application/json
 成功返回 `{ "result": "摘要文本" }`；失败返回 `{ "detail": "错误说明" }`，配合 HTTP 状态码：
 - `400`：`mode` 不是 `"summary"`，或正文为空
 - `429`：同一个 `device_id` 60 秒内超过 5 次请求（`ratelimit.py` 用 `collections.deque` 存时间戳，超出窗口的旧记录自动弹出）
-- `500`：服务端没配置 `ANTHROPIC_API_KEY`
-- `502`：调用 Anthropic 时网络异常、返回非 200、或返回内容为空
+- `500`：服务端两种密钥方式都没配置
+- `502`：调用 LLM 时网络异常、返回非 200、或返回内容为空
 
-**前端错误分支**（`ai-client.js` 里 `summarize()` 函数）：`fetch` 本身抛异常（网络断开、后端没启动）→ 提示"无法连接 AI 服务"；响应状态码 429 → 提示"请求过于频繁"；其他非 2xx → 读取响应体里的 `detail` 字段展示，没有就用状态码兜底文案。
+**前端错误分支**：`ai-client.js` 的 `summarize()` 里，`chrome.runtime.sendMessage` 本身抛异常或返回空（service worker 未响应/已休眠）→ 提示"无法连接 AI 服务"；响应状态码 429 → 提示"请求过于频繁"；其他非 2xx → 读取响应体里的 `detail` 字段展示，没有就用状态码兜底文案。`background.js` 侧则负责真正的网络 `fetch`，把结果或错误包成 `{ ok, status, detail }` 通过 `sendResponse` 传回。
 
-**调用 LLM 的具体参数**（`llm_client.py`）：模型固定用 `claude-haiku-4-5-20251001`；正文超过 `MAX_TEXT_CHARS = 20000` 字符直接截断；固定的 `system` 提示词要求"3-5 条中文要点摘要，每条前面加 `- `"；用 `httpx.AsyncClient`，超时设置 30 秒；密钥通过 `os.environ.get("ANTHROPIC_API_KEY")` 读取，来源是 `backend/.env` 文件（由 `python-dotenv` 在 `main.py` 启动时加载），这个文件被 `.gitignore` 排除，不会被提交到仓库。
+**两种鉴权模式**（`llm_client.py` 的 `_resolve_endpoint_and_headers()`，网关优先）：
+- `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`：走公司内部/自建网关，`Authorization: Bearer` 传 token；目标是内网地址，必须设 `trust_env=False` 绕开本机系统代理直连——否则代理会在给内网目标做 TLS 握手时中途断连（`httpx.ConnectError(EndOfStream())`，`curl` 因不读系统代理而"看起来正常"，排查时容易被这个差异误导）
+- `ANTHROPIC_API_KEY`：走 Anthropic 官方 API，`x-api-key` 传密钥；保留 `trust_env=True`，因为通常需要代理才能连通境外服务
 
-**跨域限制**：`main.py` 用 FastAPI 的 `CORSMiddleware`，`allow_origin_regex` 设成只匹配 `chrome-extension://` 开头的来源，且只开放 `POST` 方法——避免普通网页脚本能直接调用这个接口。
+模型固定用 `claude-haiku-4-5-20251001`；正文超过 `LLM_MAX_TEXT_CHARS`（默认 20000）字符直接截断；固定的 `system` 提示词要求"3-5 条中文要点摘要，每条前面加 `- `"；用 `httpx.AsyncClient`，默认超时 `LLM_TIMEOUT_SECONDS`（45 秒，可通过 `backend/.env` 调整）。密钥来源是 `backend/.env` 文件（由 `python-dotenv` 在 `main.py` 启动时加载），这个文件被 `.gitignore` 排除，不会被提交到仓库。
 
-**已知局限**：限流计数存在进程内存里（`ratelimit.py` 的 `_hits` 字典），服务重启后清零；如果部署多个实例，各实例限流互不共享；`ai-client.js` 里的服务地址 `API_BASE` 目前硬编码成 `http://localhost:8000`，正式上线需要改成真实域名并配合 HTTPS。
+**跨域限制**：`main.py` 用 FastAPI 的 `CORSMiddleware`，`allow_origin_regex` 设成只匹配 `chrome-extension://` 开头的来源（以及本地 `file://` 调试环境的字面 `"null"` origin），且只开放 `POST` 方法——避免普通网页脚本能直接调用这个接口。另外配了一个 Local Network Access 中间件：Chrome 142+ 要求访问 `localhost` 这类私有地址前，服务端必须在预检响应里回 `Access-Control-Allow-Private-Network: true`，否则请求会在浏览器侧被直接拒绝。
+
+**已知局限**：限流计数存在进程内存里（`ratelimit.py` 的 `_hits` 字典），服务重启后清零；如果部署多个实例，各实例限流互不共享；`background.js` 里的服务地址 `AI_API_BASE` 目前硬编码成 `http://localhost:8000`，正式上线需要改成真实域名并配合 HTTPS；`device_id` 是客户端自报的字符串，换一个就能绕开限流，暂无防刷机制。
 
 </details>
 
@@ -275,6 +322,14 @@ Content-Type: application/json
 - [ ] AI 句子拆解能力
 - [ ] 匿名使用数据分析
 - [ ] SPA 路由切换后正文自动重定位
+
+---
+
+## © 版权声明
+
+Copyright (c) 2026 Insta360. All rights reserved.
+
+本仓库代码及相关文档为 Insta360 内部专有资产，未经书面授权不得对外分发、复制或用于商业目的。`vendor/readability.js`（Mozilla Readability.js，Apache-2.0）除外，其版权归属原作者，随其自身许可条款使用。
 
 ---
 

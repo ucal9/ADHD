@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 偏好存取模块
 // 职责：定义默认偏好结构、从 chrome.storage.sync 加载/保存用户设置。
 // 不依赖其他 INS_Reader 模块，是最底层的模块。

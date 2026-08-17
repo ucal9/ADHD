@@ -1,5 +1,8 @@
-"""缓读 · LLM 客户端
+"""Copyright (c) 2026 Insta360. All rights reserved.
+
+缓读 · LLM 客户端
 职责：封装对 Anthropic Messages API（或兼容网关）的调用，密钥从环境变量读取，从不暴露给前端。
+调用者：仅 routers/ai.py 的 summarize_endpoint()，限流通过后调用本模块的 summarize()。
 
 支持两种鉴权方式（二选一，优先使用网关模式）：
 - ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN：走内部/自建网关，用 Authorization: Bearer 传token
@@ -7,12 +10,14 @@
 """
 
 import os
+import time
 
 import httpx
 
 DEFAULT_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TEXT_CHARS = 20000  # 超长正文直接截断，避免单次请求过大
+DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "45"))
+MAX_TEXT_CHARS = int(os.environ.get("LLM_MAX_TEXT_CHARS", "20000"))  # 超长正文直接截断，避免单次请求过大
 
 SUMMARY_SYSTEM_PROMPT = (
     "你是一个帮助注意力容易分散的读者快速抓重点的助手。"
@@ -72,6 +77,9 @@ async def summarize(text: str) -> str:
     if not truncated:
         raise LLMError("正文内容为空", status_code=400)
 
+    started_at = time.perf_counter()
+    timeout = httpx.Timeout(DEFAULT_TIMEOUT_SECONDS, connect=10.0)
+
     payload = {
         "model": MODEL,
         "max_tokens": 512,
@@ -79,20 +87,81 @@ async def summarize(text: str) -> str:
         "messages": [{"role": "user", "content": truncated}],
     }
 
+    print(
+        "[INS_Reader][llm_client] 准备调用 LLM",
+        {
+            "endpoint": endpoint,
+            "model": MODEL,
+            "text_length": len(truncated),
+            "max_text_chars": MAX_TEXT_CHARS,
+            "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+            "trust_env": trust_env,
+        },
+        flush=True,
+    )
+
     try:
-        async with httpx.AsyncClient(timeout=30.0, trust_env=trust_env) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=trust_env) as client:
             resp = await client.post(endpoint, json=payload, headers=headers)
+    except httpx.ReadTimeout as exc:
+        elapsed = time.perf_counter() - started_at
+        print(
+            "[INS_Reader][llm_client] 上游 LLM 响应超时",
+            {
+                "elapsed_seconds": round(elapsed, 2),
+                "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+                "endpoint": endpoint,
+                "text_length": len(truncated),
+                "exception": repr(exc),
+            },
+            flush=True,
+        )
+        raise LLMError(
+            f"上游 LLM 网关响应超时（{DEFAULT_TIMEOUT_SECONDS:g}s，文本长度 {len(truncated)}）"
+        ) from exc
     except httpx.RequestError as exc:
-        raise LLMError(f"调用 LLM 服务失败：{exc!r}") from exc
+        elapsed = time.perf_counter() - started_at
+        print(
+            "[INS_Reader][llm_client] 调用 LLM 网络异常",
+            {
+                "elapsed_seconds": round(elapsed, 2),
+                "endpoint": endpoint,
+                "text_length": len(truncated),
+                "exception_type": type(exc).__name__,
+                "exception": repr(exc),
+            },
+            flush=True,
+        )
+        raise LLMError(f"调用 LLM 服务失败：{type(exc).__name__}: {exc}") from exc
 
     if resp.status_code != 200:
+        elapsed = time.perf_counter() - started_at
+        body_preview = resp.text[:500]
+        print(
+            "[INS_Reader][llm_client] LLM 返回非 200",
+            {
+                "elapsed_seconds": round(elapsed, 2),
+                "status_code": resp.status_code,
+                "body_preview": body_preview,
+            },
+            flush=True,
+        )
         raise LLMError(f"LLM 服务返回错误：{resp.status_code}", status_code=502)
 
     data = resp.json()
     blocks = data.get("content") or []
     text_blocks = [b.get("text", "") for b in blocks if b.get("type") == "text"]
     result = "\n".join(text_blocks).strip()
+    elapsed = time.perf_counter() - started_at
+    print(
+        "[INS_Reader][llm_client] LLM 调用完成",
+        {
+            "elapsed_seconds": round(elapsed, 2),
+            "status_code": resp.status_code,
+            "result_length": len(result),
+        },
+        flush=True,
+    )
     if not result:
         raise LLMError("LLM 服务返回内容为空", status_code=502)
     return result
-

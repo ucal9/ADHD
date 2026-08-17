@@ -1,7 +1,12 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 设置面板模块
-// 职责：渲染用户设置面板（主题/字号/宽度/降噪开关），Shadow DOM 隔离样式。
-// 依赖 INS_Reader.prefsStore / noiseFilter / readerLayer。面板自身不决定"是否应用"，
-// 只负责收集用户输入后回调 INS_Reader.appController 提供的 applyAll/restore。
+// 职责：渲染用户设置面板（主题/字号/宽度/降噪开关/AI 摘要按钮），Shadow DOM 隔离样式。
+// 依赖 INS_Reader.prefsStore / noiseFilter / readerLayer / aiClient / appController。
+// 面板自身不决定"是否应用"，只负责收集用户输入后回调 INS_Reader.appController
+// 提供的 applyAll/restoreOriginalPage；点击"生成摘要"时直接调用 aiClient.summarize()，
+// 成功后把结果写入 readerLayer.setSummary() 再重新渲染。
+// 调用者：content.js 把 updateNoiseCount 注册为 readerLayer 的降噪计数回调；
+// content.js 收到 INS_READER_TOGGLE_PANEL 消息时调用 toggle()。
 
 window.INS_Reader = window.INS_Reader || {};
 
@@ -256,9 +261,16 @@ window.INS_Reader = window.INS_Reader || {};
     const generateBtn = panel.querySelector('[data-role="ai-generate"]');
     const progressEl = panel.querySelector('[data-role="ai-progress"]');
     generateBtn.addEventListener('click', async () => {
+      const startedAt = performance.now();
       const { aiClient } = window.INS_Reader;
       const articleText = readerLayer.getArticleText();
+      console.log('[INS_Reader][panel-ui] 用户点击生成摘要', {
+        textLength: articleText ? articleText.length : 0,
+        href: location.href,
+        origin: location.origin,
+      });
       if (!articleText) {
+        console.warn('[INS_Reader][panel-ui] 未找到正文内容，终止生成');
         statusEl.textContent = '未找到正文内容';
         return;
       }
@@ -271,17 +283,30 @@ window.INS_Reader = window.INS_Reader || {};
       const stages = ['正在读取正文…', '正在分析内容…', '正在生成摘要…'];
       let stageIndex = 0;
       statusEl.textContent = stages[0];
+      console.log('[INS_Reader][panel-ui] 进入生成流程，阶段文案:', stages[0]);
       const stageTimer = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
         statusEl.textContent = stages[stageIndex];
+        console.log('[INS_Reader][panel-ui] 阶段文案推进:', stages[stageIndex]);
       }, 3000);
 
       try {
+        console.log('[INS_Reader][panel-ui] 准备调用 aiClient.summarize');
         const summary = await aiClient.summarize(articleText);
+        console.log('[INS_Reader][panel-ui] aiClient.summarize 返回成功', {
+          elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+          resultLength: summary ? summary.length : 0,
+        });
         readerLayer.setSummary(summary);
         appController.applyAll();
         INS_render();
       } catch (err) {
+        console.error('[INS_Reader][panel-ui] aiClient.summarize 返回失败', {
+          elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+          name: err && err.name,
+          message: err && err.message,
+          stack: err && err.stack,
+        });
         statusEl.classList.add('error');
         statusEl.textContent = err.message || 'AI 摘要生成失败';
         generateBtn.disabled = false;

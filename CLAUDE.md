@@ -54,8 +54,60 @@ content.js                  → INS_Reader.appController  （顶层编排器，�
 
 **AI 摘要功能的完整链路**：`content script (ai-client.js)` → `background.js`（转发）→ `backend/`（FastAPI，见 `backend/` 下的 Python 代码）→ 公司内部 LLM 网关或 Anthropic 官方 API。后端只做转发和限流，不落地正文内容。`llm_client.py` 支持两种鉴权模式（网关优先）：网关模式的目标是内网地址，必须显式 `trust_env=False` 绕开本机系统代理直连，否则代理会在给内网目标做 TLS 握手时中途断连（表现为 `httpx.ConnectError(EndOfStream())`，而 `curl` 默认不读系统代理所以"看起来正常"，排查时容易被这个差异误导）；官方 API 模式则保留 `trust_env=True`，因为通常需要代理才能连通境外服务。
 
+## 完整调用关系图
+
+**模块间调用不是自由的多对多，而是一条被 `content.js` 收拢的星形结构**——除 AI 摘要链路外，各功能模块互不直接调用彼此，只经 `content.js`（编排）或直接读写 `prefsStore`（共享状态）联系：
+
+```
+popup.js  ──chrome.tabs.sendMessage(INS_READER_TOGGLE_PANEL)──▶  content.js
+                                                                     │
+                                              onMessage 收到后调用   │
+                          ┌──────────────────────────────────────────┤
+                          ▼                                          ▼
+                 appController.applyAll()                  panelUI.toggle()/render()
+                          │                                          │
+              ┌───────────┼───────────┐                    用户操作面板控件触发：
+              ▼           ▼           ▼                    - 改设置 → prefsStore.save()
+      readerLayer.render() ...   prefsStore.save()                 + appController.applyAll()
+              │                                             - 点"生成摘要" → aiClient.summarize()
+              │ render() 内部依次调用：                              + readerLayer.setSummary()
+              ├─ articleLocator.findArticleRoot()（只调一次，结果缓存）
+              ├─ domPath.getChildIndexPath()      （克隆前记录正文位置）
+              ├─ document.body.cloneNode(true)    （克隆整个 body）
+              ├─ noiseFilter.stripNoiseFromClone()（清理克隆体，回调 onHiddenCountChange → panelUI.updateNoiseCount）
+              ├─ domPath.resolveChildIndexPath()  （克隆体里找回正文节点）
+              └─ readingStats.estimateMinutes()/computeProgress()（渲染阅读时长/滚动进度）
+```
+
+**AI 摘要请求的跨进程/跨服务调用链**（唯一穿过 content script 边界的链路）：
+
+```
+panel-ui.js  (用户点"生成摘要")
+    │  aiClient.summarize(articleText)
+    ▼
+ai-client.js
+    │  chrome.runtime.sendMessage({ type: 'INS_READER_AI_SUMMARIZE', payload })
+    ▼                                    ← 跨执行上下文：content script 无法直接
+background.js  (service worker)            fetch 后端，因宿主页面 CSP 限制
+    │  fetch('http://localhost:8000/v1/ai/summarize')
+    ▼
+backend/main.py            （CORS + Local Network Access 中间件放行后）
+    ▼
+backend/routers/ai.py       summarize_endpoint()
+    │  ├─ ratelimit.is_allowed(device_id)     （超限直接 429，不再往下调）
+    │  └─ services/llm_client.py.summarize()
+    ▼
+backend/services/llm_client.py
+    │  httpx.AsyncClient.post(endpoint, ...)
+    ▼
+公司内部 LLM 网关 / Anthropic 官方 API
+```
+
+响应沿同一条链路原路返回：`llm_client.py` 解析出文本 → `ai.py` 包成 `SummarizeResponse` → `background.js` 的 `sendResponse` → `ai-client.js` 的 `await chrome.runtime.sendMessage(...)` 返回值 → `panel-ui.js` 拿到摘要文本后调用 `readerLayer.setSummary()` + `appController.applyAll()` 重新渲染阅读层。任意一环失败都不会影响核心阅读功能——`readerLayer`/`noiseFilter`/`articleLocator` 这条本地渲染链路完全不依赖网络。
+
 ## 约定
 
 - 全篇使用中文注释和 UI 文案——编辑时保持一致。
 - 每个模块文件开头都有一段注释说明其职责和依赖关系（或声明无依赖）——新增模块时延续这个模式。
 - 绝不能在 `noiseFilter` 或 `articleLocator` 中修改真实页面 DOM——只能操作克隆体或进行只读查询。这是架构的硬性不变量，不是风格偏好。
+- 本仓库代码版权归 Insta360 所有（专有，非开源）。每个自研源文件（`src/`、`backend/`，不含 `vendor/`）开头第一行必须是 `Copyright (c) <年份> Insta360. All rights reserved.`——新增文件时延续这个模式。`vendor/readability.js` 保留其原始 Apache-2.0 版权头，不要改动。

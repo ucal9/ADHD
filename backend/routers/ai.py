@@ -1,6 +1,11 @@
-"""缓读 · AI 摘要路由
+"""Copyright (c) 2026 Insta360. All rights reserved.
+
+缓读 · AI 摘要路由
 POST /v1/ai/summarize：接收正文文本，返回 LLM 生成的要点摘要。
 按 device_id 限流，不落地正文内容（不写数据库、不记日志正文）。
+调用者：background.js 的 handleSummarize()。本文件依次调用
+ratelimit.is_allowed() 做限流判断，再调用 services/llm_client.py 的 summarize()
+实际请求 LLM。
 """
 
 from fastapi import APIRouter, HTTPException

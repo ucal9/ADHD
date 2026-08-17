@@ -1,6 +1,9 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 降噪清理模块
 // 职责：维护降噪选择器规则组，对 DOM 克隆体执行清理（不触碰原页面）。
 // 依赖 INS_Reader.prefsStore 读取用户当前开启的降噪类别。
+// 调用者：reader-layer.js 的 render() 调用 stripNoiseFromClone()；
+// panel-ui.js 读取 NOISE_GROUPS 的 key 列表来渲染降噪类别开关。
 
 window.INS_Reader = window.INS_Reader || {};
 

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 正文定位模块
 // 职责：在原页面 DOM 中找到正文根节点（只读，从不修改原始 DOM）。
 // 优先用 Readability 辅助定位，失败时降级为语义标签 + 文本密度算法。

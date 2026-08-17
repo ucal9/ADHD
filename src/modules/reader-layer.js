@@ -1,7 +1,12 @@
+// Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 沉浸阅读层模块
 // 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
 // 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
-// 依赖 INS_Reader.prefsStore / articleLocator / noiseFilter / domPath。
+// 依赖 INS_Reader.prefsStore / articleLocator / noiseFilter / domPath / readingStats。
+// 调用者：content.js 的 applyAll()/restoreOriginalPage() 调用 render()/remove()/
+// lockOriginalPage()/unlockOriginalPage()；panel-ui.js 每次改设置后调用 render()
+// 重新渲染，并读取 getHiddenCount()/getArticleText()/getSummary() 展示状态、
+// 调用 setSummary() 写入 AI 摘要结果。
 
 window.INS_Reader = window.INS_Reader || {};
 
