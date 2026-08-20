@@ -199,8 +199,15 @@
                 const detail = (body && body.detail) || `AI 服务出错（${resp.status}）`;
                 return { ok: false, status: resp.status, detail };
               }
+              if (!body || typeof body.result !== 'string') {
+                console.error('[INS_Reader][demo-mock] 后端返回 200 但 result 格式异常', {
+                  bodyType: body === null ? 'null' : typeof body,
+                  resultType: body && typeof body.result,
+                });
+                return { ok: false, status: 502, detail: 'AI 服务返回格式异常' };
+              }
               console.log('[INS_Reader][demo-mock] 摘要成功', {
-                resultLength: body && body.result ? body.result.length : undefined,
+                resultLength: body.result.length,
               });
               return { ok: true, result: body.result };
             } catch (err) {

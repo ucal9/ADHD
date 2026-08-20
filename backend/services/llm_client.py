@@ -148,7 +148,14 @@ async def summarize(text: str) -> str:
         )
         raise LLMError(f"LLM 服务返回错误：{resp.status_code}", status_code=502)
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise LLMError("LLM 服务返回内容不是合法 JSON", status_code=502) from exc
+
+    if not isinstance(data, dict):
+        raise LLMError("LLM 服务返回结构异常", status_code=502)
+
     blocks = data.get("content") or []
     text_blocks = [b.get("text", "") for b in blocks if b.get("type") == "text"]
     result = "\n".join(text_blocks).strip()

@@ -287,7 +287,6 @@ window.INS_Reader = window.INS_Reader || {};
       const stageTimer = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
         statusEl.textContent = stages[stageIndex];
-        console.log('[INS_Reader][panel-ui] 阶段文案推进:', stages[stageIndex]);
       }, 3000);
 
       try {

@@ -60,19 +60,22 @@ async function INS_handleSummarize(payload) {
     });
     return { ok: false, status: resp.status, detail };
   }
+  if (!body || typeof body.result !== 'string') {
+    console.error('[INS_Reader][background] 后端返回 200 但 result 格式异常', {
+      bodyType: body === null ? 'null' : typeof body,
+      resultType: body && typeof body.result,
+    });
+    return { ok: false, status: 502, detail: 'AI 服务返回格式异常' };
+  }
   console.log('[INS_Reader][background] 摘要成功', {
     elapsed: `${Math.round(performance.now() - startedAt)}ms`,
-    resultLength: body && body.result ? body.result.length : undefined,
+    resultLength: body.result.length,
   });
   return { ok: true, result: body.result };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type !== 'INS_READER_AI_SUMMARIZE') {
-    console.log('[INS_Reader][background] onMessage 忽略非摘要消息', {
-      type: msg && msg.type,
-      runtimeId: chrome.runtime.id,
-    });
     return;
   }
   console.log('[INS_Reader][background] onMessage 收到摘要消息', {

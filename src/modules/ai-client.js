@@ -14,9 +14,20 @@
 window.INS_Reader = window.INS_Reader || {};
 
 (function () {
-  // 后端调用 LLM 的默认超时是 45s，前端必须留出比它更长的等待时间，
+  // 后端调用 LLM 的默认超时是 45s，也允许用户调到 90s；前端必须留出比它更长的等待时间，
   // 否则后端还在等上游响应，前端已经先把请求判成超时。
-  const SEND_MESSAGE_TIMEOUT_MS = 60000;
+  const SEND_MESSAGE_TIMEOUT_MS = 120000;
+
+  function INS_friendlyTransportError(err) {
+    const raw = err && err.message ? err.message : '';
+    if (/超时|timed?\s*out/i.test(raw)) {
+      return 'AI 请求超时，请稍后重试';
+    }
+    if (/message port|receiving end|could not establish/i.test(raw)) {
+      return '无法连接 AI 服务，请重新加载插件或确认后端已启动';
+    }
+    return '无法连接 AI 服务，请确认后端已启动';
+  }
 
   function INS_runtimeIdentity() {
     const rt = chrome && chrome.runtime;
@@ -103,7 +114,7 @@ window.INS_Reader = window.INS_Reader || {};
         stack: err && err.stack,
         lastError: chrome.runtime.lastError,
       });
-      throw new Error(err && err.message ? err.message : '无法连接 AI 服务，请确认后端已启动');
+      throw new Error(INS_friendlyTransportError(err));
     }
 
     if (!resp) {
@@ -119,6 +130,12 @@ window.INS_Reader = window.INS_Reader || {};
     if (!resp.ok) {
       console.error('[INS_Reader][ai-client] 后端返回失败:', resp.status, resp.detail);
       throw new Error(resp.detail || `AI 服务出错（${resp.status}）`);
+    }
+    if (typeof resp.result !== 'string') {
+      console.error('[INS_Reader][ai-client] 后端成功响应缺少 result 字符串', {
+        resultType: typeof resp.result,
+      });
+      throw new Error('AI 服务返回格式异常');
     }
 
     console.log('[INS_Reader][ai-client] 摘要成功，长度:', resp.result.length);
