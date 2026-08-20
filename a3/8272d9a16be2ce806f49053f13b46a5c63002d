@@ -1,0 +1,29 @@
+src/background.js
+  fd4d31243a0f90bf 63-69,72
+backend/services/llm_client.py
+  fd4d31243a0f90bf 151-158
+demo.html
+  fd4d31243a0f90bf 202-208,210
+src/modules/ai-client.js
+  fd4d31243a0f90bf 17,19-30,117,134-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "a38272d9a16be2ce806f49053f13b46a5c63002d",
+  "prompts": {
+    "fd4d31243a0f90bf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e23d36e4-2db9-441c-b4f9-95cf36fa3372",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "odezz",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 81,
+      "overriden_lines": 0
+    }
+  }
+}
