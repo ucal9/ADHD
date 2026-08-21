@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 设置面板模块
 // 职责：渲染用户设置面板（主题/字号/宽度/降噪开关/AI 摘要按钮），Shadow DOM 隔离样式。
-// 依赖 INS_Reader.prefsStore / noiseFilter / readerLayer / aiClient / appController。
+// 依赖 INS_Reader.prefsStore / noiseFilter / readerLayer / aiClient / pageMeta / appController。
 // 面板自身不决定"是否应用"，只负责收集用户输入后回调 INS_Reader.appController
 // 提供的 applyAll/restoreOriginalPage；点击"生成摘要"时直接调用 aiClient.summarize()，
-// 成功后把结果写入 readerLayer.setSummary() 再重新渲染。
+// 成功后把结果写入 readerLayer.setSummary() 再重新渲染。当前页面被判定不适合阅读模式时
+// （readerLayer.getLastFeasibilityReason() 非空），改为展示"生成内容概览"入口：用
+// pageMeta.extract() 抓取标题/描述文本，同样交给 aiClient.summarize() 生成概览，
+// 结果只存在面板本地状态（不写入 prefsStore/readerLayer，关闭面板即丢弃）。
 // 调用者：content.js 把 updateNoiseCount 注册为 readerLayer 的降噪计数回调；
 // content.js 收到 INS_READER_TOGGLE_PANEL 消息时调用 toggle()。
 
@@ -18,7 +21,12 @@ window.INS_Reader = window.INS_Reader || {};
   const LETTER_SPACING_MIN = 0;
   const LETTER_SPACING_MAX = 0.12;
 
-  const state = { panelHost: null };
+  const state = {
+    panelHost: null,
+    pageOverviewText: '', // 面板本地状态，不持久化：关闭面板/切换页面即丢弃
+    pageOverviewStatus: '', // '' | 'loading' | 'error'
+    pageOverviewError: '',
+  };
 
   function INS_ensurePanelHost() {
     if (state.panelHost) return state.panelHost;
@@ -73,6 +81,13 @@ window.INS_Reader = window.INS_Reader || {};
 
     const noiseLabels = { ads: '广告', sidebar: '侧边栏/导航', comments: '评论区', banners: '弹窗/横幅', marketing: '会员/登录推销' };
 
+    const feasibilityReason = readerLayer.getLastFeasibilityReason();
+    const feasibilityMessages = {
+      domain: '此页面暂不支持阅读模式（识别为视频/流媒体网站）',
+      video: '此页面暂不支持阅读模式（检测到视频内容为主）',
+      'thin-content': '此页面暂不支持阅读模式（未能识别到足够的正文内容）',
+    };
+
     const panel = document.createElement('div');
     panel.className = isFirstOpen ? 'ins-reader-panel opening' : 'ins-reader-panel';
     panel.innerHTML = `
@@ -81,6 +96,34 @@ window.INS_Reader = window.INS_Reader || {};
         <button class="close-btn" data-role="close" aria-label="关闭">×</button>
       </div>
       <p class="tagline">把阅读调成适合你的样子</p>
+      ${
+        feasibilityReason
+          ? `<div class="feasibility-notice">
+              <p class="feasibility-notice-text">${feasibilityMessages[feasibilityReason] || '此页面暂不支持阅读模式'}</p>
+              <button class="overview-generate" data-role="overview-generate" ${state.pageOverviewStatus === 'loading' ? 'disabled' : ''}>
+                ${state.pageOverviewText ? '重新生成内容概览' : '生成内容概览'}
+              </button>
+              ${
+                state.pageOverviewStatus === 'loading'
+                  ? '<p class="overview-status">正在生成…</p>'
+                  : ''
+              }
+              ${
+                state.pageOverviewStatus === 'error'
+                  ? `<p class="overview-status error" data-role="overview-error"></p>`
+                  : ''
+              }
+              ${
+                state.pageOverviewText
+                  ? `<div class="overview-result">
+                      <p class="overview-body" data-role="overview-body"></p>
+                      <p class="overview-disclaimer">基于页面标题与简介生成，可能不完整</p>
+                    </div>`
+                  : ''
+              }
+            </div>`
+          : ''
+      }
 
       <div class="segmented" data-role="theme-group">
         ${['gentle', 'focus', 'custom']
@@ -159,8 +202,40 @@ window.INS_Reader = window.INS_Reader || {};
     `;
     shadow.appendChild(panel);
 
+    // 概览文本用 textContent 写入，避免 LLM 返回内容被当作 HTML 解析
+    const overviewBodyEl = panel.querySelector('[data-role="overview-body"]');
+    if (overviewBodyEl) overviewBodyEl.textContent = state.pageOverviewText;
+    const overviewErrorEl = panel.querySelector('[data-role="overview-error"]');
+    if (overviewErrorEl) overviewErrorEl.textContent = state.pageOverviewError || '生成失败';
+
     // 事件绑定
     panel.querySelector('[data-role="close"]').addEventListener('click', () => INS_close(panel));
+
+    const overviewBtn = panel.querySelector('[data-role="overview-generate"]');
+    if (overviewBtn) {
+      overviewBtn.addEventListener('click', async () => {
+        const { pageMeta, aiClient } = window.INS_Reader;
+        const metaText = pageMeta.extract();
+        if (!metaText) {
+          state.pageOverviewStatus = 'error';
+          state.pageOverviewError = '未能提取到页面标题或简介';
+          INS_render();
+          return;
+        }
+        state.pageOverviewStatus = 'loading';
+        state.pageOverviewError = '';
+        INS_render();
+        try {
+          const overview = await aiClient.summarize(metaText);
+          state.pageOverviewText = overview;
+          state.pageOverviewStatus = '';
+        } catch (err) {
+          state.pageOverviewStatus = 'error';
+          state.pageOverviewError = err.message || '生成失败';
+        }
+        INS_render();
+      });
+    }
 
     panel.querySelectorAll('[data-theme]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -351,6 +426,23 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .close-btn:hover { color: #33403a; }
     .tagline { margin: 5px 0 14px; font-size: 11px; color: #287e72; }
+    .feasibility-notice {
+      margin: 0 0 12px; padding: 8px 10px; border-radius: 5px;
+      background: #fdf1ea; border: 1px solid #eecdb3; color: #9a5a2c;
+      font-size: 11px; line-height: 1.5;
+    }
+    .feasibility-notice-text { margin: 0 0 8px; }
+    .overview-generate {
+      width: 100%; height: 26px; border: 1px solid #eecdb3; border-radius: 4px;
+      background: #fff; color: #9a5a2c; font-size: 11px; cursor: pointer; transition: background 0.15s;
+    }
+    .overview-generate:hover:not(:disabled) { background: #fdf1ea; }
+    .overview-generate:disabled { opacity: 0.6; cursor: default; }
+    .overview-status { margin: 6px 0 0; font-size: 10px; color: #9a5a2c; }
+    .overview-status.error { color: #b95042; }
+    .overview-result { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eecdb3; }
+    .overview-body { margin: 0; font-size: 11px; line-height: 1.6; color: #5a4030; white-space: pre-line; }
+    .overview-disclaimer { margin: 6px 0 0; font-size: 9px; color: #b08a63; }
     .segmented {
       display: grid; grid-template-columns: repeat(3, 1fr);
       background: #eef1ed; border-radius: 4px; padding: 2px; margin-bottom: 10px;

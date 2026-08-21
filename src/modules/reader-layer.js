@@ -2,10 +2,11 @@
 // INS_Reader · 沉浸阅读层模块
 // 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
 // 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
-// 依赖 INS_Reader.prefsStore / articleLocator / noiseFilter / domPath / readingStats。
+// 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath / readingStats。
 // 调用者：content.js 的 applyAll()/restoreOriginalPage() 调用 render()/remove()/
-// lockOriginalPage()/unlockOriginalPage()；panel-ui.js 每次改设置后调用 render()
-// 重新渲染，并读取 getHiddenCount()/getArticleText()/getSummary() 展示状态、
+// lockOriginalPage()/unlockOriginalPage()；render() 返回 false 时 content.js 不会
+// 锁定原页面。panel-ui.js 每次改设置后调用 render() 重新渲染，并读取
+// getHiddenCount()/getArticleText()/getSummary()/getLastFeasibilityReason() 展示状态、
 // 调用 setSummary() 写入 AI 摘要结果。
 
 window.INS_Reader = window.INS_Reader || {};
@@ -24,6 +25,7 @@ window.INS_Reader = window.INS_Reader || {};
     onHiddenCountChange: null, // 供面板模块订阅，渲染完成后回调最新的降噪计数
     summaryText: '', // AI 摘要结果，由面板模块调用 aiClient 后写入
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()
+    lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
   };
 
   function INS_ensureReaderHost() {
@@ -53,16 +55,24 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_render() {
-    const { articleLocator, noiseFilter, domPath, prefsStore, readingStats } = window.INS_Reader;
+    const { articleLocator, feasibility, noiseFilter, domPath, prefsStore, readingStats } = window.INS_Reader;
     const prefs = prefsStore.get();
+
+    state.articleSourceRoot = state.articleSourceRoot || articleLocator.findArticleRoot();
+    const sourceNode = state.articleSourceRoot || document.body;
+
+    const { feasible, reason } = feasibility.check(state.articleSourceRoot);
+    if (!feasible) {
+      state.lastFeasibilityReason = reason;
+      INS_remove();
+      return false;
+    }
+    state.lastFeasibilityReason = null;
 
     const host = INS_ensureReaderHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = '';
-
-    state.articleSourceRoot = state.articleSourceRoot || articleLocator.findArticleRoot();
-    const sourceNode = state.articleSourceRoot || document.body;
 
     // 克隆整个 body（而非只克隆正文节点），这样广告/侧边栏/评论等
     // 与正文平级的干扰元素才能被降噪选择器命中。清理后再按路径
@@ -180,6 +190,8 @@ window.INS_Reader = window.INS_Reader || {};
         ? '已读完'
         : `剩余 ${readingStats.formatMinutes(remaining)}`;
     });
+
+    return true;
   }
 
   function INS_remove() {
@@ -209,6 +221,10 @@ window.INS_Reader = window.INS_Reader || {};
     return state.summaryText;
   }
 
+  function INS_getLastFeasibilityReason() {
+    return state.lastFeasibilityReason;
+  }
+
   window.INS_Reader.readerLayer = {
     render: INS_render,
     remove: INS_remove,
@@ -219,5 +235,6 @@ window.INS_Reader = window.INS_Reader || {};
     getArticleText: INS_getArticleText,
     setSummary: INS_setSummary,
     getSummary: INS_getSummary,
+    getLastFeasibilityReason: INS_getLastFeasibilityReason,
   };
 })();

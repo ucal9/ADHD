@@ -29,6 +29,8 @@
         "vendor/readability.js",
         "src/modules/prefs-store.js",
         "src/modules/article-locator.js",
+        "src/modules/feasibility.js",
+        "src/modules/page-meta.js",
         "src/modules/noise-filter.js",
         "src/modules/dom-path.js",
         "src/modules/reading-stats.js",

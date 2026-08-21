@@ -16,8 +16,12 @@
       readerLayer.unlockOriginalPage();
       return;
     }
-    readerLayer.lockOriginalPage();
-    readerLayer.render();
+    const rendered = readerLayer.render();
+    if (rendered) {
+      readerLayer.lockOriginalPage();
+    } else {
+      readerLayer.unlockOriginalPage();
+    }
   }
 
   function INS_restoreOriginalPage() {
