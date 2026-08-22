@@ -31,13 +31,19 @@ window.INS_Reader = window.INS_Reader || {};
     monospace: '等宽',
   };
 
-  const ICON_MARK = `<svg class="read-icon" width="20" height="20" viewBox="0 0 200 200" fill="none" aria-hidden="true">
-    <rect width="200" height="200" rx="44" fill="#111111"/>
-    <path d="M58 62C58 53.16 65.16 46 74 46H126C134.84 46 142 53.16 142 62V138C142 146.84 134.84 154 126 154H74C65.16 154 58 146.84 58 138V62Z" fill="none" stroke="white" stroke-width="12"/>
-    <path d="M82 78H122" stroke="white" stroke-width="11" stroke-linecap="round"/>
-    <path d="M78 100C92 90 106 90 120 100C134 110 146 110 158 100" stroke="#FFB800" stroke-width="11" stroke-linecap="round"/>
-    <path d="M78 126C92 116 106 116 120 126C134 136 146 136 158 126" stroke="white" stroke-width="11" stroke-linecap="round" opacity="0.5"/>
-  </svg>`;
+  function INS_iconMarkup(enabled = false) {
+    const background = enabled ? '#FFB800' : '#111111';
+    const primary = enabled ? '#111111' : '#FFFFFF';
+    const accent = enabled ? '#FFFFFF' : '#FFB800';
+    const secondary = enabled ? '#111111' : '#FFFFFF';
+    return `<svg class="read-icon" width="20" height="20" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+      <rect width="200" height="200" rx="44" fill="${background}"/>
+      <path d="M58 62C58 53.16 65.16 46 74 46H126C134.84 46 142 53.16 142 62V138C142 146.84 134.84 154 126 154H74C65.16 154 58 146.84 58 138V62Z" fill="none" stroke="${primary}" stroke-width="12"/>
+      <path d="M82 78H122" stroke="${primary}" stroke-width="11" stroke-linecap="round"/>
+      <path d="M78 100C92 90 106 90 120 100C134 110 146 110 158 100" stroke="${accent}" stroke-width="11" stroke-linecap="round"/>
+      <path d="M78 126C92 116 106 116 120 126C134 136 146 136 158 126" stroke="${secondary}" stroke-width="11" stroke-linecap="round" opacity="0.5"/>
+    </svg>`;
+  }
 
   const MODULE_ICONS = {
     typography: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M12 5v14M8 19h8"/></svg>',
@@ -45,8 +51,28 @@ window.INS_Reader = window.INS_Reader || {};
     ai: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3ZM19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15ZM5 14l.7 2.3L8 17l-2.3.7L5 20l-.7-2.3L2 17l2.3-.7L5 14Z"/></svg>',
   };
 
-  function INS_brandMarkup() {
-    return `${ICON_MARK}<span>缓读</span>`;
+  function INS_brandMarkup(enabled) {
+    return `${INS_iconMarkup(enabled)}<span>缓读</span>`;
+  }
+
+  function INS_presetMarkup(prefs, showTitle) {
+    const presets = prefs.presets || [];
+    if (presets.length === 0 && !prefs.hasCustomized) return '';
+    return `
+      <div class="${showTitle ? 'presets-section' : 'simple-presets'}">
+        ${showTitle ? '<div class="presets-header">我的模式</div>' : ''}
+        <div class="preset-chips">
+          ${prefs.hasCustomized ? `<span class="preset-chip-wrap"><button class="preset-chip ${prefs.activePreset === '默认模式' ? 'active' : ''}" data-default-preset="true">默认模式</button></span>` : ''}
+          ${presets
+            .map(
+              (p, idx) => `<span class="preset-chip-wrap">
+                <button class="preset-chip ${prefs.activePreset === p.name ? 'active' : ''}" data-preset-index="${idx}">${p.name}</button>
+                <button class="preset-delete" data-preset-delete-index="${idx}" aria-label="删除预设 ${p.name}">×</button>
+              </span>`
+            )
+            .join('')}
+        </div>
+      </div>`;
   }
 
   // 页面底色调色盘（PRD：排版栏目新增自定义调色盘）
@@ -221,6 +247,9 @@ window.INS_Reader = window.INS_Reader || {};
 
     // 降噪开关的展示顺序与 develop 设计保持一致。
     const noiseOrder = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
+    const typographyDisabled = prefs.typographyEnabled === false;
+    const aiDisabled = prefs.aiEnabled === false;
+    const noiseDisabled = prefs.noiseReduction === false;
 
     const feasibilityReason = readerLayer.getLastFeasibilityReason();
     const feasibilityMessages = {
@@ -232,9 +261,6 @@ window.INS_Reader = window.INS_Reader || {};
     const panel = document.createElement('div');
     panel.className = isFirstOpen ? 'ins-reader-panel opening' : 'ins-reader-panel';
     panel.classList.toggle('expanded', state.isExpanded);
-    const showPresetSection = Boolean((prefs.presets && prefs.presets.length > 0) || prefs.hasCustomized);
-    const showDefaultPreset = Boolean(prefs.hasCustomized);
-
     let panelHTML = `
       <div class="panel-top">
         ${
@@ -242,7 +268,7 @@ window.INS_Reader = window.INS_Reader || {};
             ? '<button class="back-btn" data-role="collapse-btn" aria-label="返回">‹ 返回</button>'
             : ''
         }
-        <div class="brand">${INS_brandMarkup()}</div>
+        <div class="brand">${INS_brandMarkup(prefs.enabled)}</div>
         ${state.isExpanded
           ? '<button class="close-btn" data-role="close" aria-label="关闭">×</button>'
           : `<button class="switch ${prefs.enabled ? 'on' : ''}" data-role="panel-enabled-toggle" aria-label="缓读总开关"><span></span></button>`}
@@ -281,12 +307,14 @@ window.INS_Reader = window.INS_Reader || {};
             : ''
         }
 
+        ${INS_presetMarkup(prefs, true)}
+
         <div class="expandable-group" data-group="typography">
           <div class="group-header ${state.expandedMenus.typography ? 'open' : ''}" data-role="typography-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.typography}" aria-controls="typography-menu">
             <span class="group-label">${MODULE_ICONS.typography}<span>舒适排版</span></span>
             <span class="group-actions"><button class="switch small ${prefs.typographyEnabled !== false ? 'on' : ''}" data-role="typography-master-switch" aria-label="舒适排版开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
-          <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''}" data-role="typography-menu" role="region">
+          <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''} ${typographyDisabled ? 'is-disabled' : ''}" data-role="typography-menu" role="region" aria-disabled="${typographyDisabled}">
             <div class="setting">
               <span>页面底色</span>
               <div class="bg-swatches">
@@ -294,14 +322,14 @@ window.INS_Reader = window.INS_Reader || {};
                   (s) =>
                     `<button class="bg-swatch ${
                       prefs.customColors.bg.toLowerCase() === s.bg ? 'active' : ''
-                    }" data-swatch-bg="${s.bg}" data-swatch-text="${s.text}" title="${s.label}" aria-label="${s.label}" style="background:${s.bg}"></button>`
+                    }" data-swatch-bg="${s.bg}" data-swatch-text="${s.text}" title="${s.label}" aria-label="${s.label}" style="background:${s.bg}" ${typographyDisabled ? 'disabled' : ''}></button>`
                 ).join('')}
               </div>
             </div>
 
             <div class="custom-colors">
-              <label>背景 <input type="color" data-role="custom-bg" value="${prefs.customColors.bg}" /></label>
-              <label>文字 <input type="color" data-role="custom-text" value="${prefs.customColors.text}" /></label>
+              <label>背景 <input type="color" data-role="custom-bg" value="${prefs.customColors.bg}" ${typographyDisabled ? 'disabled' : ''} /></label>
+              <label>文字 <input type="color" data-role="custom-text" value="${prefs.customColors.text}" ${typographyDisabled ? 'disabled' : ''} /></label>
             </div>
 
             ${STEPPERS.map(
@@ -310,11 +338,11 @@ window.INS_Reader = window.INS_Reader || {};
               <span>${s.label}</span>
               <div class="stepper">
                 <button data-step-key="${s.key}" data-step-dir="-1" ${
-                prefs[s.key] <= s.min ? 'disabled' : ''
+                typographyDisabled || prefs[s.key] <= s.min ? 'disabled' : ''
               } aria-label="减小${s.label}">−</button>
                 <b class="step-value">${prefs[s.key].toFixed(s.digits)}${s.suffix}</b>
                 <button data-step-key="${s.key}" data-step-dir="1" ${
-                prefs[s.key] >= s.max ? 'disabled' : ''
+                typographyDisabled || prefs[s.key] >= s.max ? 'disabled' : ''
               } aria-label="增大${s.label}">＋</button>
               </div>
             </div>`
@@ -326,7 +354,7 @@ window.INS_Reader = window.INS_Reader || {};
                 ${Object.entries(FONT_FAMILIES)
                   .map(
                     ([key, label]) =>
-                      `<button data-font="${key}" class="font-btn ${prefs.fontFamily === key ? 'active' : ''}">${label}</button>`
+                      `<button data-font="${key}" class="font-btn ${prefs.fontFamily === key ? 'active' : ''}" ${typographyDisabled ? 'disabled' : ''}>${label}</button>`
                   )
                   .join('')}
               </div>
@@ -335,56 +363,35 @@ window.INS_Reader = window.INS_Reader || {};
           </div>
         </div>
 
-        ${
-          prefs.presets && prefs.presets.length > 0
-            ? `<div class="presets-section">
-                <div class="presets-header">我的预设</div>
-                <div class="presets-list">
-                  ${prefs.presets
-                    .map(
-                      (p, idx) => `
-                    <div class="preset-item">
-                      <button class="preset-apply" data-preset-index="${idx}">${p.name}</button>
-                      <button class="preset-delete" data-preset-index="${idx}" aria-label="删除预设">×</button>
-                    </div>`
-                    )
-                    .join('')}
-                </div>
-              </div>`
-            : ''
-        }
-
         <div class="expandable-group" data-group="ai">
           <div class="group-header ${state.expandedMenus.ai ? 'open' : ''}" data-role="ai-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.ai}" aria-controls="ai-menu">
             <span class="group-label">${MODULE_ICONS.ai}<span>AI 内容助手</span></span>
             <span class="group-actions"><button class="switch small ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
-          <div id="ai-menu" class="group-content ${state.expandedMenus.ai ? 'expanded' : ''}" data-role="ai-menu" role="region">
+          <div id="ai-menu" class="group-content ${state.expandedMenus.ai ? 'expanded' : ''} ${aiDisabled ? 'is-disabled' : ''}" data-role="ai-menu" role="region" aria-disabled="${aiDisabled}">
             ${
-              prefs.aiEnabled
-                ? `
-              <div class="ai-row">
+              `
+              <div class="ai-row ${aiDisabled ? 'disabled' : ''}">
                 <span>AI 摘要</span>
               </div>
 
-                <p class="ai-hint">正文将发送到缓读后端生成摘要，不会用于其他用途。</p>
-                <button class="ai-generate" data-role="ai-generate">${
+                <p class="ai-hint">${aiDisabled ? '开启 AI 内容助手后，可在此配置摘要与高亮。' : '正文将发送到缓读后端生成摘要，不会用于其他用途。'}</p>
+                <button class="ai-generate" data-role="ai-generate" ${aiDisabled ? 'disabled' : ''}>${
                   readerLayer.getSummary() ? '重新生成摘要' : '生成摘要'
                 }</button>
                 <div class="ai-progress" data-role="ai-progress" hidden><div class="ai-progress-bar"></div></div>
                 <p class="ai-status" data-role="ai-status"></p>
 
-              <div class="ai-row">
+              <div class="ai-row ${aiDisabled ? 'disabled' : ''}">
                 <span>简化段落长句</span>
-                <button class="switch small ${prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences ? 'on' : ''}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句"><span></span></button>
+                <button class="switch small ${prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences ? 'on' : ''}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句" ${aiDisabled ? 'disabled' : ''}><span></span></button>
               </div>
-              <div class="ai-row">
+              <div class="ai-row ${aiDisabled ? 'disabled' : ''}">
                 <span>高亮核心信息</span>
-                <button class="switch small ${prefs.aiHighlight?.markKeyInfo ? 'on' : ''}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息"><span></span></button>
+                <button class="switch small ${prefs.aiHighlight?.markKeyInfo ? 'on' : ''}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息" ${aiDisabled ? 'disabled' : ''}><span></span></button>
               </div>
 
             `
-              : '<p class="ai-hint">开启 AI 内容助手后，可在此配置摘要与高亮。</p>'
             }
           </div>
         </div>
@@ -394,13 +401,13 @@ window.INS_Reader = window.INS_Reader || {};
             <span class="group-label">${MODULE_ICONS.noise}<span>动态降噪</span></span>
             <span class="group-actions"><button class="switch small ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="动态降噪开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
-          <div id="noise-menu" class="group-content ${state.expandedMenus.noise ? 'expanded' : ''}" data-role="noise-menu" role="region">
+          <div id="noise-menu" class="group-content ${state.expandedMenus.noise ? 'expanded' : ''} ${noiseDisabled ? 'is-disabled' : ''}" data-role="noise-menu" role="region" aria-disabled="${noiseDisabled}">
             ${noiseOrder
               .map(
                 (key) => `
-              <div class="noise-row">
+              <div class="noise-row ${noiseDisabled ? 'disabled' : ''}">
                 <span>${noiseLabels[key]}</span>
-                <button class="switch small ${prefs.noiseOptions[key] ? 'on' : ''}" data-noise-key="${key}"><span></span></button>
+                <button class="switch small ${prefs.noiseOptions[key] ? 'on' : ''}" data-noise-key="${key}" ${noiseDisabled ? 'disabled' : ''}><span></span></button>
                 </div>`
               )
               .join('')}
@@ -417,13 +424,7 @@ window.INS_Reader = window.INS_Reader || {};
     } else {
       panelHTML += `
         <div class="simple-mode">
-          ${showPresetSection ? `<div class="simple-presets">
-            <div class="simple-presets-title">我的预设</div>
-            <div class="preset-chips">
-              ${showDefaultPreset ? `<span class="preset-chip-wrap"><button class="preset-chip ${prefs.activePreset === '默认模式' ? 'active' : ''}" data-default-preset="true">默认模式</button></span>` : ''}
-              ${(prefs.presets || []).map((p, idx) => `<span class="preset-chip-wrap"><button class="preset-chip ${prefs.activePreset === p.name ? 'active' : ''}" data-simple-preset-index="${idx}">${p.name}</button><button class="preset-delete" data-simple-preset-delete="${idx}" aria-label="删除预设 ${p.name}">×</button></span>`).join('')}
-            </div>
-          </div>` : ''}
+          ${INS_presetMarkup(prefs, false)}
 
           <button class="expand-btn" data-role="expand-btn">详细配置</button>
         </div>
@@ -510,11 +511,13 @@ window.INS_Reader = window.INS_Reader || {};
     const customText = panel.querySelector('[data-role="custom-text"]');
     if (customBg && customText) {
       customBg.addEventListener('input', () => {
+        if (customBg.disabled) return;
         prefs.customColors.bg = customBg.value;
         INS_markCustomized(prefs);
         appController.applyAll();
       });
       customText.addEventListener('input', () => {
+        if (customText.disabled) return;
         prefs.customColors.text = customText.value;
         INS_markCustomized(prefs);
         appController.applyAll();
@@ -525,6 +528,7 @@ window.INS_Reader = window.INS_Reader || {};
     // 页面底色调色盘：选中色板即写入前景/背景色
     panel.querySelectorAll('[data-swatch-bg]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.disabled) return;
         prefs.customColors.bg = btn.getAttribute('data-swatch-bg');
         prefs.customColors.text = btn.getAttribute('data-swatch-text');
         INS_markCustomized(prefs);
@@ -537,6 +541,7 @@ window.INS_Reader = window.INS_Reader || {};
     // 四个数值型排版项的 +/- 步进器（字号/行间距/段落间距/字间距）
     panel.querySelectorAll('[data-step-key]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.disabled) return;
         const key = btn.getAttribute('data-step-key');
         const dir = Number(btn.getAttribute('data-step-dir'));
         const conf = STEPPERS.find((s) => s.key === key);
@@ -553,6 +558,7 @@ window.INS_Reader = window.INS_Reader || {};
     // 字体选择
     panel.querySelectorAll('[data-font]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.disabled) return;
         prefs.fontFamily = btn.getAttribute('data-font');
         INS_markCustomized(prefs);
         prefsStore.save();
@@ -652,6 +658,7 @@ window.INS_Reader = window.INS_Reader || {};
     panel.querySelectorAll('[data-ai-feature]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (btn.disabled || aiDisabled) return;
         const feature = btn.getAttribute('data-ai-feature');
         INS_markCustomized(prefs);
         if (feature === 'simplifyParagraphs') {
@@ -676,6 +683,7 @@ window.INS_Reader = window.INS_Reader || {};
     // AI 高亮子功能复选框
     panel.querySelectorAll('[data-highlight-key]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
+        if (checkbox.disabled || aiDisabled) return;
         const key = checkbox.getAttribute('data-highlight-key');
         prefs.aiHighlight[key] = checkbox.checked;
         INS_markCustomized(prefs);
@@ -689,6 +697,7 @@ window.INS_Reader = window.INS_Reader || {};
     const progressEl = panel.querySelector('[data-role="ai-progress"]');
     if (generateBtn) {
       generateBtn.addEventListener('click', async () => {
+        if (generateBtn.disabled || aiDisabled) return;
         const startedAt = performance.now();
         const { aiClient } = window.INS_Reader;
         const articleText = readerLayer.getArticleText();
@@ -765,28 +774,36 @@ window.INS_Reader = window.INS_Reader || {};
         const prefsSnapshot = JSON.parse(JSON.stringify(prefs));
         delete prefsSnapshot.presets;
         delete prefsSnapshot.deviceId;
-        prefs.presets.push({
+        const savedPreset = {
           name: presetName.trim(),
           timestamp: Date.now(),
           prefs: prefsSnapshot,
-        });
+        };
+        prefs.presets.push(savedPreset);
+        // 保存即应用：用户保存的模式应成为当前选中模式，并立即作用于页面。
+        prefs.enabled = true;
+        prefs.activePreset = savedPreset.name;
+        prefs.hasCustomized = true;
+        prefs.hasActivated = true;
         prefsStore.save();
+        appController.applyAll();
         INS_render();
       });
     }
 
-    // 应用预设
-    panel.querySelectorAll('.preset-apply').forEach((btn) => {
+    // 应用预设：详细配置页和入口页共用胶囊数据属性与行为。
+    panel.querySelectorAll('[data-preset-index]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const idx = Number(btn.getAttribute('data-preset-index'));
         INS_applyPreset(prefs.presets[idx]);
       });
     });
 
-    // 删除预设
-    panel.querySelectorAll('.preset-delete').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-preset-index'));
+    // 删除预设：入口页和详细配置页共用删除按钮。
+    panel.querySelectorAll('[data-preset-delete-index]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = Number(btn.getAttribute('data-preset-delete-index'));
         if (confirm('确定删除此预设？')) {
           if (prefs.activePreset === prefs.presets[idx]?.name) prefs.activePreset = '';
           prefs.presets.splice(idx, 1);
@@ -799,6 +816,7 @@ window.INS_Reader = window.INS_Reader || {};
     // 各降噪选项开关
     panel.querySelectorAll('[data-noise-key]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.disabled || noiseDisabled) return;
         const key = btn.getAttribute('data-noise-key');
         prefs.noiseOptions[key] = !prefs.noiseOptions[key];
         INS_markCustomized(prefs);
@@ -808,27 +826,8 @@ window.INS_Reader = window.INS_Reader || {};
       });
     });
 
-    // 简洁模式预设胶囊
-    panel.querySelectorAll('[data-simple-preset-index]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.getAttribute('data-simple-preset-index'));
-        INS_applyPreset(prefs.presets[idx]);
-      });
-    });
     const defaultPresetBtn = panel.querySelector('[data-default-preset]');
     if (defaultPresetBtn) defaultPresetBtn.addEventListener('click', INS_applyDefaultMode);
-    panel.querySelectorAll('[data-simple-preset-delete]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = Number(btn.getAttribute('data-simple-preset-delete'));
-        if (confirm('确定删除此预设？')) {
-          if (prefs.activePreset === prefs.presets[idx]?.name) prefs.activePreset = '';
-          prefs.presets.splice(idx, 1);
-          prefsStore.save();
-          INS_render();
-        }
-      });
-    });
 
     const restoreBtn = panel.querySelector('[data-role="restore"]');
     if (restoreBtn) {
@@ -923,6 +922,10 @@ window.INS_Reader = window.INS_Reader || {};
       margin-top: 0;
     }
     .group-content.expanded { max-height: 1600px; margin-top: 2px; }
+    .group-content.is-disabled { opacity: 0.62; }
+    .group-content.is-disabled .setting > span,
+    .group-content.is-disabled .noise-row > span,
+    .group-content.is-disabled .ai-row > span { color: #8D928E; }
     .custom-colors { display: flex; gap: 14px; margin-bottom: 10px; font-size: 11px; color: #555555; }
     .custom-colors label { display: flex; align-items: center; gap: 6px; }
     .custom-colors input[type="color"] { width: 24px; height: 20px; border: 1px solid #DCDCDC; border-radius: 3px; padding: 0; cursor: pointer; }
@@ -942,6 +945,8 @@ window.INS_Reader = window.INS_Reader || {};
       border: 1px solid #DCDCDC; padding: 0; transition: transform 0.15s, box-shadow 0.15s;
     }
     .bg-swatch:hover { transform: scale(1.1); }
+    .bg-swatch:disabled { opacity: 0.48; cursor: not-allowed; filter: grayscale(1); }
+    .bg-swatch:disabled:hover { transform: none; }
     .bg-swatch.active { box-shadow: 0 0 0 2px #FFB800; border-color: #fff; }
     .stepper { display: flex; align-items: center; gap: 6px; }
     .stepper input[type="range"] { flex: 1; accent-color: #FFB800; }
@@ -959,6 +964,7 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .font-btn.active { background: #FFF3CC; color: #7A5800; border-color: #FFB800; }
     .font-btn:hover:not(.active) { background: #F5F5F3; }
+    .font-btn:disabled { opacity: 0.48; cursor: not-allowed; filter: grayscale(1); }
     .width-row { display: flex; align-items: center; gap: 5px; margin-top: 8px; color: #555555; }
     .width-row span { margin-right: auto; }
     .width-row button {
@@ -1006,6 +1012,7 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .ai-status { margin: 6px 0 0; font-size: 10px; color: #777777; min-height: 12px; }
     .ai-status.error { color: #b95042; }
+    .ai-row.disabled { opacity: 0.72; }
     .ai-highlight-section { display: none; }
     .ai-highlight-header { font-size: 11px; font-weight: 600; color: #555555; margin-bottom: 6px; }
     .highlight-option { margin: 4px 0; }
@@ -1021,6 +1028,7 @@ window.INS_Reader = window.INS_Reader || {};
     .switch.small { width: 27px; height: 15px; }
     .switch.small span { width: 11px; height: 11px; }
     .switch.small.on span { transform: translateX(12px); }
+    .switch:disabled { opacity: 0.52; cursor: not-allowed; filter: grayscale(1); }
     .restore {
       width: 100%; height: 30px; margin: 15px 0 0; display: flex; align-items: center; justify-content: center;
       color: #333333; background: #fff; border: 1px solid #DCDCDC; border-radius: 4px; cursor: pointer; font-size: 12px;
@@ -1041,7 +1049,7 @@ window.INS_Reader = window.INS_Reader || {};
       background: #F5F5F3; color: #555555; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s, padding-right 0.15s;
     }
     .preset-chip:hover { background: #FFF3CC; }
-    .preset-chip.active { background: #111111; border-color: #111111; color: #FFFFFF; }
+    .preset-chip.active { background: #FFF3CC; border-color: #FFB800; color: #7A5800; }
     .preset-chip-wrap .preset-delete {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
       width: 16px; height: 16px; padding: 0; border: 0; background: transparent;

@@ -24,6 +24,13 @@ window.INS_Reader = window.INS_Reader || {};
     pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
   };
 
+  function INS_setHiddenCount(count) {
+    state.hiddenCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+    if (typeof state.onHiddenCountChange === 'function') {
+      state.onHiddenCountChange(state.hiddenCount);
+    }
+  }
+
   function INS_ensureReaderHost() {
     if (state.readerHost) return state.readerHost;
     state.readerHost = document.createElement('div');
@@ -98,7 +105,7 @@ window.INS_Reader = window.INS_Reader || {};
     // 在克隆体里重新定位出等价的正文节点。
     const path = domPath.getChildIndexPath(sourceNode, document.body);
     const bodyClone = document.body.cloneNode(true);
-    state.hiddenCount = noiseFilter.stripNoiseFromClone(bodyClone);
+    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone));
 
     // 自动播放的暂停必须作用于原页面（克隆体里的播放器不会发声），因此单独处理
     if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
@@ -106,10 +113,6 @@ window.INS_Reader = window.INS_Reader || {};
     } else {
       INS_restoreAutoplayMedia();
     }
-    if (typeof state.onHiddenCountChange === 'function') {
-      state.onHiddenCountChange(state.hiddenCount);
-    }
-
     const clone = (path && domPath.resolveChildIndexPath(bodyClone, path)) || bodyClone;
     state.articleText = clone.textContent || '';
 
@@ -233,6 +236,7 @@ window.INS_Reader = window.INS_Reader || {};
 
   function INS_remove() {
     INS_restoreAutoplayMedia();
+    INS_setHiddenCount(0);
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;

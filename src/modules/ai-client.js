@@ -29,6 +29,20 @@ window.INS_Reader = window.INS_Reader || {};
     return '无法连接 AI 服务，请确认后端已启动';
   }
 
+  function INS_detailMessage(detail, fallback) {
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (detail && typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+    if (detail && typeof detail === 'object') {
+      try {
+        const serialized = JSON.stringify(detail);
+        if (serialized && serialized !== '{}') return serialized;
+      } catch (_) {
+        // 仅用于错误展示，不能让序列化失败遮蔽原始请求结果。
+      }
+    }
+    return fallback;
+  }
+
   function INS_runtimeIdentity() {
     const rt = chrome && chrome.runtime;
     return {
@@ -129,7 +143,7 @@ window.INS_Reader = window.INS_Reader || {};
     }
     if (!resp.ok) {
       console.error('[INS_Reader][ai-client] 后端返回失败:', resp.status, resp.detail);
-      throw new Error(resp.detail || `AI 服务出错（${resp.status}）`);
+      throw new Error(INS_detailMessage(resp.detail, `AI 服务出错（${resp.status}）`));
     }
     if (typeof resp.result !== 'string') {
       console.error('[INS_Reader][ai-client] 后端成功响应缺少 result 字符串', {

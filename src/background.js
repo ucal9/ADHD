@@ -12,6 +12,68 @@
 // 结果通过 sendResponse 回传给 ai-client.js。
 
 const AI_API_BASE = 'http://localhost:8000';
+const PREFS_STORAGE_KEY = 'ins_reader_prefs_v1';
+
+function INS_errorMessage(error, fallback = '未知错误') {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error.message === 'string' && error.message.trim()) return error.message;
+  if (error && typeof error === 'object') {
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch (_) {
+      // 某些扩展 API 错误对象包含循环引用，退回 String() 仍比直接拼接更明确。
+    }
+  }
+  if (error == null) return fallback;
+  const stringified = String(error);
+  return stringified === '[object Object]' ? fallback : stringified;
+}
+
+function INS_errorRecord(error) {
+  return {
+    name: error && error.name ? String(error.name) : undefined,
+    message: INS_errorMessage(error),
+    stack: error && error.stack ? String(error.stack) : undefined,
+  };
+}
+
+function INS_transportError(error) {
+  const message = INS_errorMessage(error);
+  if (/failed to fetch|network|load failed|connection refused/i.test(message)) {
+    return `无法连接 AI 后端（${AI_API_BASE}），请确认后端已启动并允许本地网络访问`;
+  }
+  return message || `无法连接 AI 后端（${AI_API_BASE}）`;
+}
+
+const TOOLBAR_ICON_PATHS = {
+  off: {
+    16: 'icons/icon16.png',
+    48: 'icons/icon48.png',
+    128: 'icons/icon128.png',
+  },
+  on: {
+    16: 'icons/icon-enabled16.png',
+    48: 'icons/icon-enabled48.png',
+    128: 'icons/icon-enabled128.png',
+  },
+};
+
+function INS_updateToolbarIcon(enabled) {
+  chrome.action.setIcon({ path: enabled ? TOOLBAR_ICON_PATHS.on : TOOLBAR_ICON_PATHS.off }).catch((err) => {
+    console.warn('[INS_Reader][background] 工具栏图标更新失败', err);
+  });
+}
+
+chrome.storage.sync.get([PREFS_STORAGE_KEY], (result) => {
+  INS_updateToolbarIcon(Boolean(result[PREFS_STORAGE_KEY]?.enabled));
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'sync' || !changes[PREFS_STORAGE_KEY]) return;
+  INS_updateToolbarIcon(Boolean(changes[PREFS_STORAGE_KEY].newValue?.enabled));
+});
 
 const CONTENT_SCRIPT_FILES = [
   'vendor/readability.js',
@@ -80,11 +142,10 @@ async function INS_handleSummarize(payload) {
   } catch (err) {
     console.error('[INS_Reader][background] fetch 抛出异常', {
       elapsed: `${Math.round(performance.now() - startedAt)}ms`,
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
+      apiBase: AI_API_BASE,
+      ...INS_errorRecord(err),
     });
-    throw err;
+    throw new Error(INS_transportError(err));
   }
   console.log('[INS_Reader][background] fetch 返回', {
     elapsed: `${Math.round(performance.now() - startedAt)}ms`,
@@ -94,13 +155,12 @@ async function INS_handleSummarize(payload) {
 
   const body = await resp.json().catch((err) => {
     console.error('[INS_Reader][background] 响应体解析失败', {
-      name: err && err.name,
-      message: err && err.message,
+      ...INS_errorRecord(err),
     });
     return null;
   });
   if (!resp.ok) {
-    const detail = (body && body.detail) || `AI 服务出错（${resp.status}）`;
+    const detail = INS_errorMessage(body && body.detail, `AI 服务出错（${resp.status}）`);
     console.error('[INS_Reader][background] 后端返回非 200', {
       status: resp.status,
       detail,
@@ -136,11 +196,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .then(sendResponse)
     .catch((err) => {
       console.error('[INS_Reader][background] handleSummarize 最终失败', {
-        name: err && err.name,
-        message: err && err.message,
-        stack: err && err.stack,
+        ...INS_errorRecord(err),
       });
-      sendResponse({ ok: false, status: 0, detail: err.message || '无法连接 AI 服务' });
+      sendResponse({ ok: false, status: 0, detail: INS_errorMessage(err, `无法连接 AI 后端（${AI_API_BASE}）`) });
     });
   return true; // 告知 Chrome 会异步调用 sendResponse
 });

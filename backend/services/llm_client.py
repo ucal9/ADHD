@@ -19,6 +19,14 @@ MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "45"))
 MAX_TEXT_CHARS = int(os.environ.get("LLM_MAX_TEXT_CHARS", "20000"))  # 超长正文直接截断，避免单次请求过大
 
+PLACEHOLDER_SECRETS = {
+    "your-gateway-token",
+    "your_gateway_token_here",
+    "your-anthropic-api-key-here",
+    "your_anthropic_api_key_here",
+    "sk-ant-xxxxxxxx",
+}
+
 SUMMARY_SYSTEM_PROMPT = (
     "你是一个帮助注意力容易分散的读者快速抓重点的助手。"
     "请用简洁的中文，输出3-5条要点摘要（每条一行，前面加“- ”），不要输出多余的开头或结尾语。"
@@ -41,7 +49,7 @@ def _resolve_endpoint_and_headers() -> tuple[str, dict, bool]:
     """
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/")
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    if base_url and auth_token:
+    if base_url and _is_configured_secret(auth_token):
         return (
             f"{base_url}/v1/messages",
             {
@@ -53,7 +61,7 @@ def _resolve_endpoint_and_headers() -> tuple[str, dict, bool]:
         )
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if api_key:
+    if _is_configured_secret(api_key):
         return (
             DEFAULT_API_URL,
             {
@@ -68,6 +76,14 @@ def _resolve_endpoint_and_headers() -> tuple[str, dict, bool]:
         "服务端未配置密钥：请设置 ANTHROPIC_API_KEY，或 ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN",
         status_code=500,
     )
+
+
+def _is_configured_secret(value: str | None) -> bool:
+    """判断环境变量是否是真实配置，避免示例占位符被当成密钥发送。"""
+    if not value:
+        return False
+    normalized = value.strip().lower()
+    return bool(normalized) and normalized not in PLACEHOLDER_SECRETS
 
 
 async def summarize(text: str) -> str:

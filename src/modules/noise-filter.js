@@ -39,7 +39,19 @@ window.INS_Reader = window.INS_Reader || {};
     if (!prefs.noiseReduction) return 0;
     let count = 0;
     for (const selector of INS_activeSelectors()) {
-      cloneRoot.querySelectorAll(selector).forEach((el) => {
+      let elements;
+      try {
+        elements = cloneRoot.querySelectorAll(selector);
+      } catch (error) {
+        // 单个站点适配器规则失效时跳过该规则，不能阻断阅读层渲染和计数回调。
+        console.warn('[INS_Reader][noise-filter] 忽略无效降噪选择器', {
+          selector,
+          message: error && error.message ? error.message : String(error),
+        });
+        continue;
+      }
+      elements.forEach((el) => {
+        if (!el.parentNode) return;
         el.remove();
         count += 1;
       });
