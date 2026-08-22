@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <rect width="1400" height="900" fill="#e8ebe7"/>
+  <rect x="55" y="48" width="1290" height="804" rx="10" fill="#fbfcfa" stroke="#cbd4ce"/>
+  <rect x="55" y="48" width="1290" height="48" rx="10" fill="#f4f6f3"/>
+  <circle cx="82" cy="72" r="6" fill="#df7c6f"/><circle cx="101" cy="72" r="6" fill="#d8b35c"/><circle cx="120" cy="72" r="6" fill="#77ae88"/>
+  <rect x="245" y="61" width="570" height="24" rx="5" fill="#fff" stroke="#d7dfd8"/>
+  <text x="530" y="78" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#78827c">thepaper.cn / insight / reading-space</text>
+  <rect x="55" y="96" width="1290" height="62" fill="#fff" stroke="#e3e8e2"/>
+  <text x="92" y="135" font-family="serif" font-size="24" font-weight="700" fill="#26322d">澎湃</text><text x="170" y="135" font-family="Arial" font-size="9" letter-spacing="2" fill="#5e6a63">INSIGHT</text>
+  <text x="285" y="135" font-family="Arial" font-size="14" fill="#69756e">深度　 城市　 文化　 思想　 生活</text>
+  <rect x="55" y="158" width="1290" height="31" fill="#b95042"/><text x="80" y="178" font-family="Arial" font-size="11" fill="#fff8f2">直播：雨季城市观察 · 今晚 20:00</text>
+  <rect x="55" y="189" width="930" height="663" fill="#f8faf7"/>
+  <rect x="55" y="189" width="165" height="663" fill="#f0f2f0"/><text x="85" y="240" font-family="Arial" font-size="12" fill="#87908a">专题</text><text x="85" y="275" font-family="Arial" font-size="13" fill="#3c4942">公共空间</text><text x="85" y="307" font-family="Arial" font-size="13" fill="#3c4942">城市生活</text>
+  <rect x="260" y="232" width="610" height="10" rx="5" fill="#d9dfda"/><rect x="260" y="260" width="520" height="30" rx="4" fill="#35423b"/><rect x="260" y="306" width="490" height="10" rx="5" fill="#b9c5bd"/><rect x="260" y="336" width="570" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="366" width="530" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="420" width="600" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="450" width="520" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="480" width="585" height="10" rx="5" fill="#c4cec7"/>
+  <rect x="985" y="96" width="360" height="756" fill="#fffdf9" stroke="#ccd4ce"/>
+  <text x="1020" y="145" font-family="Arial, sans-serif" font-size="23" font-weight="700" fill="#21463f">▣ 缓读</text>
+  <text x="1020" y="174" font-family="Arial, sans-serif" font-size="12" fill="#78837d">把阅读调成适合你的样子</text>
+  <text x="1288" y="145" text-anchor="end" font-family="Arial" font-size="12" fill="#277e72">已开启</text><rect x="1285" y="157" width="38" height="20" rx="10" fill="#1f8b7d"/><circle cx="1313" cy="167" r="7" fill="#fff"/>
+  <line x1="1018" y1="204" x2="1315" y2="204" stroke="#e7ece7"/>
+  <text x="1020" y="242" font-family="Arial" font-size="12" fill="#4c5a52">一键降噪</text><text x="1305" y="242" text-anchor="end" font-family="Arial" font-size="11" fill="#1f8b7d">全部开启</text><rect x="1285" y="253" width="38" height="20" rx="10" fill="#1f8b7d"/><circle cx="1313" cy="263" r="7" fill="#fff"/>
+  <text x="1020" y="300" font-family="Arial" font-size="12" fill="#4c5a52">我的预设</text><text x="1305" y="300" text-anchor="end" font-family="Arial" font-size="11" fill="#69756e">已保存 2 / 3</text><rect x="1285" y="311" width="38" height="20" rx="10" fill="#c8d0ca"/><circle cx="1295" cy="321" r="7" fill="#fff"/>
+  <rect x="1018" y="356" width="297" height="70" rx="5" fill="#f0f6f2"/><text x="1037" y="386" font-family="Arial" font-size="11" fill="#477067">本页已隐藏</text><text x="1037" y="412" font-family="Arial" font-size="23" font-weight="700" fill="#237f72">4</text><text x="1070" y="412" font-family="Arial" font-size="12" fill="#477067">个干扰元素</text>
+  <line x1="1018" y1="458" x2="1315" y2="458" stroke="#e7ece7"/>
+  <rect x="1018" y="485" width="297" height="42" rx="5" fill="#fff" stroke="#c7d8d0"/><text x="1166" y="511" text-anchor="middle" font-family="Arial" font-size="12" font-weight="600" fill="#197a6d">详细配置　›</text>
+  <text x="1020" y="575" font-family="Arial" font-size="11" fill="#7b8680">快捷入口只保留两个全局动作，</text><text x="1020" y="596" font-family="Arial" font-size="11" fill="#7b8680">避免预设模式造成理解负担。</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <rect width="1400" height="900" fill="#e8ebe7"/>
+  <rect x="55" y="48" width="1290" height="804" rx="10" fill="#fbfcfa" stroke="#cbd4ce"/>
+  <rect x="55" y="48" width="1290" height="48" rx="10" fill="#f4f6f3"/>
+  <circle cx="82" cy="72" r="6" fill="#df7c6f"/><circle cx="101" cy="72" r="6" fill="#d8b35c"/><circle cx="120" cy="72" r="6" fill="#77ae88"/>
+  <rect x="245" y="61" width="570" height="24" rx="5" fill="#fff" stroke="#d7dfd8"/>
+  <text x="530" y="78" text-anchor="middle" font-family="Arial" font-size="12" fill="#78827c">thepaper.cn / insight / reading-space</text>
+  <rect x="55" y="96" width="930" height="756" fill="#f8faf7"/><rect x="55" y="96" width="930" height="62" fill="#fff" stroke="#e3e8e2"/>
+  <text x="92" y="135" font-family="serif" font-size="24" font-weight="700" fill="#26322d">澎湃</text><text x="170" y="135" font-family="Arial" font-size="9" letter-spacing="2" fill="#5e6a63">INSIGHT</text><text x="285" y="135" font-family="Arial" font-size="14" fill="#69756e">深度　 城市　 文化　 思想　 生活</text>
+  <rect x="55" y="158" width="930" height="30" fill="#b95042"/><text x="80" y="178" font-family="Arial" font-size="11" fill="#fff8f2">直播：雨季城市观察 · 今晚 20:00</text>
+  <rect x="55" y="188" width="165" height="664" fill="#f0f2f0"/><text x="85" y="240" font-family="Arial" font-size="12" fill="#87908a">专题</text><text x="85" y="275" font-family="Arial" font-size="13" fill="#3c4942">公共空间</text><text x="85" y="307" font-family="Arial" font-size="13" fill="#3c4942">城市生活</text>
+  <rect x="260" y="245" width="550" height="28" rx="4" fill="#35423b"/><rect x="260" y="300" width="500" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="330" width="560" height="10" rx="5" fill="#c4cec7"/><rect x="260" y="380" width="590" height="10" rx="5" fill="#c4cec7"/>
+  <rect x="1015" y="126" width="300" height="362" rx="7" fill="#fffdf9" stroke="#ccd4ce" filter="drop-shadow(0 14px 28px #253b331f)"/>
+  <text x="1038" y="165" font-family="Arial" font-size="19" font-weight="700" fill="#21463f">▣ 缓读</text><text x="1038" y="188" font-family="Arial" font-size="10" fill="#78837d">把阅读调成适合你的样子</text><line x1="1038" y1="208" x2="1292" y2="208" stroke="#e7ece7"/>
+  <text x="1038" y="241" font-family="Arial" font-size="12" fill="#4c5a52">一键降噪</text><rect x="1254" y="226" width="38" height="19" rx="10" fill="#1f8b7d"/><circle cx="1281" cy="235" r="7" fill="#fff"/>
+  <text x="1038" y="287" font-family="Arial" font-size="12" fill="#4c5a52">我的预设</text><text x="1292" y="287" text-anchor="end" font-family="Arial" font-size="10" fill="#69756e">已保存 2 / 3</text><rect x="1254" y="299" width="38" height="19" rx="10" fill="#c8d0ca"/><circle cx="1264" cy="308" r="7" fill="#fff"/>
+  <text x="1038" y="351" font-family="Arial" font-size="11" fill="#718078">已隐藏 4 个干扰元素</text><line x1="1038" y1="370" x2="1292" y2="370" stroke="#e7ece7"/>
+  <rect x="1038" y="391" width="254" height="34" rx="4" fill="#fff" stroke="#c7d8d0"/><text x="1165" y="413" text-anchor="middle" font-family="Arial" font-size="11" font-weight="600" fill="#197a6d">详细配置　›</text>
+</svg>

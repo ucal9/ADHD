@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "缓读 · 无干扰阅读模式",
+  "version": "0.2.3",
+  "description": "在真实网页上重构正文排版、降低视觉噪音，并允许用户随时恢复原页面。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["http://localhost:8000/*"],
+  "action": {
+    "default_title": "缓读",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "vendor/readability.js",
+        "src/modules/prefs-store.js",
+        "src/modules/sina-adapter.js",
+        "src/modules/article-locator.js",
+        "src/modules/feasibility.js",
+        "src/modules/page-meta.js",
+        "src/modules/noise-filter.js",
+        "src/modules/dom-path.js",
+        "src/modules/reading-stats.js",
+        "src/modules/ai-client.js",
+        "src/modules/reader-layer.js",
+        "src/modules/panel-ui.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
