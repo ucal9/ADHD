@@ -2,9 +2,17 @@
 node_modules/
 dist/
 .vite/
-backend/.env
-backend/venv/
-backend/venv312/
-backend/__pycache__/
-backend/**/__pycache__/
 .pnpm-store/
+
+# Local secrets — keep .env.example tracked
+.env
+!.env.example
+
+# Python runtime (covers backend/ and legacy-extension/backend/)
+__pycache__/
+*.py[cod]
+venv/
+venv312/
+
+# Unzipped Chrome packages used for local load; tracked artifacts stay as .zip
+release/*/

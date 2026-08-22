@@ -332,11 +332,11 @@ window.INS_Reader = window.INS_Reader || {};
       sidebar: '隐藏侧边栏',
       comments: '隐藏评论区',
       banners: '隐藏弹窗横幅',
-      blockAllVideos: '屏蔽所有视频动画',
+      blockAllVideos: '屏蔽视频动画',
     };
 
-    // 降噪开关的展示顺序与 develop 设计保持一致。
-    const noiseOrder = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
+    // 降噪开关的展示顺序与 noise-filter 的 UI_NOISE_KEYS 保持一致。
+    const noiseOrder = window.INS_Reader.noiseFilter.UI_NOISE_KEYS;
     const readingDisabled = prefs.enabled === false;
     const typographyDisabled = readingDisabled || prefs.typographyEnabled === false;
     const aiDisabled = readingDisabled || prefs.aiEnabled === false;

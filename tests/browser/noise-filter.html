@@ -1,0 +1,176 @@
+<!doctype html>
+<!-- 缓读 · 动态降噪本地验证页（仅开发用，不属于插件运行时）
+     验证未全开时在真实页面上按开关隐藏，四开关全开时才进入正文阅读层。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>动态降噪验证</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; }
+  .layout { display: flex; align-items: flex-start; }
+  #article { flex: 1; min-width: 0; }
+  #page-sidebar { width: 180px; flex: 0 0 180px; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: #fff; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; margin: 16px; border-radius: 6px; }
+  video { width: 0; height: 0; }
+</style>
+</head>
+<body>
+  <header class="top-banner" id="qr-area">
+    <img class="share-qrcode" alt="qr" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+    顶部二维码
+  </header>
+  <div class="modal-overlay" id="hidden-overlay">原页隐藏的蒙层</div>
+  <div class="layout">
+    <article id="article">
+      <p>
+        缓读会在真实网页上重构正文排版并降低视觉噪音，这一段需要足够长才能通过可行性检查。
+        读者打开阅读层之后，侧栏、评论、弹窗横幅和视频动画应当能被四个开关分别控制。
+        只有全部打开时，阅读层才从整页克隆收成这一块正文区域。
+        为了让测试页的正文长度稳定超过可行性阈值，这里再补一段说明：降噪作用在整份页面克隆上，
+        每个按钮对应一类节点，关总开关时整页原样保留，开总开关但未全开细分时只删除已开启的类别。
+      </p>
+      <video id="article-video" width="0" height="0" style="width:0;height:0"></video>
+    </article>
+    <aside class="article-content-right sidebar" id="page-sidebar">右侧推荐</aside>
+  </div>
+  <div id="bottom_sina_comment" class="blk-comment">底部评论区</div>
+  <div class="img-video-box" id="side-video">右栏视频卡片</div>
+  <div id="article-bottom" class="article-bottom">底部图示与广告图片墙</div>
+  <div id="log"></div>
+
+<script>
+  window.chrome = {
+    runtime: { id: 'test-harness', lastError: undefined, sendMessage: () => Promise.resolve({ ok: true }) },
+    storage: { sync: { get: (k, cb) => cb({}), set: () => {} } },
+  };
+</script>
+<script src="../../src/modules/prefs-store.js"></script>
+<script src="../../src/modules/sina-adapter.js"></script>
+<script src="../../src/modules/article-locator.js"></script>
+<script src="../../src/modules/feasibility.js"></script>
+<script src="../../src/modules/noise-filter.js"></script>
+<script src="../../src/modules/dom-path.js"></script>
+<script src="../../src/modules/reading-stats.js"></script>
+<script src="../../src/modules/ai-client.js"></script>
+<script src="../../src/modules/ai-enhance.js"></script>
+<script src="../../src/modules/reader-layer.js"></script>
+<script>
+(async function () {
+  const out = [];
+  const check = (name, cond, extra = '') => {
+    out.push(`${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`);
+    if (!cond) window.__failed = true;
+  };
+
+  await window.INS_Reader.prefsStore.load();
+  const { prefsStore, readerLayer, noiseFilter } = window.INS_Reader;
+
+  window.INS_Reader.siteAdapters = {
+    isSinaPage: () => true,
+    findArticleRoot: () => document.getElementById('article'),
+    findArticleRootIn: (root) => root.querySelector('#article'),
+    getNoiseSelectors: () => ({
+      sidebar: ['.article-content-right', '.page-right-bar'],
+      comments: ['#bottom_sina_comment', '.blk-comment'],
+      banners: ['.top-banner', '[class*="qrcode"]', '.modal-overlay'],
+      blockAllVideos: ['.img-video-box', '#article-bottom', '.article-bottom'],
+    }),
+  };
+  window.INS_Reader.articleLocator.findArticleRoot = () => document.getElementById('article');
+  window.INS_Reader.articleLocator.findArticleRootIn = (root) => root.querySelector('#article');
+
+  const layerRoot = () => document.getElementById('ins-reader-host')?.shadowRoot;
+  const inLayer = (sel) => layerRoot()?.querySelector(sel);
+  const hideAttr = () => window.INS_Reader.noiseFilter.LIVE_HIDE_ATTR;
+  const isLiveHidden = (id) => document.getElementById(id)?.hasAttribute(hideAttr());
+  const isLiveShown = (id) => {
+    const el = document.getElementById(id);
+    return !!(el && !el.hasAttribute(hideAttr()));
+  };
+
+  function applyNoise({ master = true, sidebar, comments, banners, videos }) {
+    const prefs = prefsStore.get();
+    prefs.enabled = true;
+    prefs.noiseReduction = master;
+    prefs.noiseOptions.sidebar = sidebar;
+    prefs.noiseOptions.comments = comments;
+    prefs.noiseOptions.banners = banners;
+    prefs.noiseOptions.blockAllVideos = videos;
+    return readerLayer.render();
+  }
+
+  const firstRender = readerLayer.render();
+  check(
+    '可行性：原页正文足够长',
+    firstRender !== false,
+    firstRender === false ? `reason=${readerLayer.getLastFeasibilityReason()}` : ''
+  );
+
+  // ---- 四开关全开：正文阅读层 ----
+  check('全开时进入正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()));
+  check('全开后出现正文阅读层', !!inLayer('.ins-reader-overlay'));
+  check('全开后阅读层没有侧栏', !inLayer('#page-sidebar'));
+  check('全开后阅读层没有顶部二维码', !inLayer('#qr-area'));
+  check('全开后仍有正文', !!inLayer('#article') || readerLayer.getRenderedArticle()?.id === 'article');
+  check('全开时 AI 落点仍是正文节点', readerLayer.getRenderedArticle()?.id === 'article');
+
+  // ---- 关掉横幅：回到真实页面，布局保持 ----
+  applyNoise({ sidebar: true, comments: true, banners: false, videos: true });
+  check('关掉横幅后不是正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()) === false);
+  check('关掉横幅后不盖阅读层', !document.getElementById('ins-reader-host'));
+  check('关掉横幅后顶部二维码仍在原页', isLiveShown('qr-area'));
+  check('关掉横幅后侧栏在原页被隐藏', isLiveHidden('page-sidebar'));
+  const overlay = document.getElementById('hidden-overlay');
+  check('原页隐藏蒙层仍是 display:none', getComputedStyle(overlay).display === 'none');
+
+  // ---- 只开横幅 ----
+  applyNoise({ sidebar: false, comments: false, banners: true, videos: false });
+  check('只开横幅后二维码被隐藏', isLiveHidden('qr-area'));
+  check('只开横幅后侧栏仍在原页', isLiveShown('page-sidebar'));
+  check('只开横幅后侧栏仍在 .layout 里', document.getElementById('page-sidebar').parentElement.classList.contains('layout'));
+  check('只开横幅后侧栏仍在正文右侧', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
+  check('只开横幅后评论仍在', isLiveShown('bottom_sina_comment'));
+  check('只开横幅后正文视频仍在', isLiveShown('article-video'));
+
+  // ---- 只开侧栏 / 评论 / 视频 ----
+  applyNoise({ sidebar: true, comments: false, banners: false, videos: false });
+  check('只开侧栏后侧栏被隐藏', isLiveHidden('page-sidebar'));
+  check('只开侧栏后侧栏节点仍在原父级', document.getElementById('page-sidebar').parentElement.classList.contains('layout'));
+  check('只开侧栏后二维码仍在', isLiveShown('qr-area'));
+
+  applyNoise({ sidebar: false, comments: true, banners: false, videos: false });
+  check('只开评论后评论被隐藏', isLiveHidden('bottom_sina_comment'));
+  check('只开评论后侧栏仍在原位', isLiveShown('page-sidebar') && document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
+
+  applyNoise({ sidebar: false, comments: false, banners: false, videos: true });
+  check('只开视频后正文 video 被隐藏', isLiveHidden('article-video'));
+  check('只开视频后右栏视频卡片被隐藏', isLiveHidden('side-video'));
+  check('只开视频后底部图示被隐藏', isLiveHidden('article-bottom'));
+  check('只开视频后侧栏仍在原位', isLiveShown('page-sidebar') && document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
+  check('只开视频后底部图示节点仍在原位', document.getElementById('article-bottom').parentElement === document.body);
+
+  applyNoise({ sidebar: false, comments: false, banners: true, videos: false });
+  check('只开横幅时底部图示不被视频规则误伤', isLiveShown('article-bottom'));
+
+  // ---- 总开关关闭：真实页面全部还原 ----
+  applyNoise({ master: false, sidebar: true, comments: true, banners: true, videos: true });
+  check('总开关关闭时不是正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()) === false);
+  check('总开关关闭后侧栏还原', isLiveShown('page-sidebar'));
+  check('总开关关闭后二维码还原', isLiveShown('qr-area'));
+  check('总开关关闭后评论还原', isLiveShown('bottom_sina_comment'));
+  check('总开关关闭后视频还原', isLiveShown('article-video') && isLiveShown('side-video'));
+  check('总开关关闭后底部图示还原', isLiveShown('article-bottom'));
+  check('总开关关闭后侧栏仍在正文旁', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
+
+  document.getElementById('log').textContent = out.join('\n') +
+    `\n\n${window.__failed ? 'FAILED' : 'ALL PASSED'}`;
+  window.__done = true;
+})().catch((err) => {
+  document.getElementById('log').textContent = 'THREW: ' + err.message + '\n' + err.stack;
+  window.__done = true;
+  window.__failed = true;
+});
+</script>
+</body>
+</html>

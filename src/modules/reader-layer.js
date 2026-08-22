@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 沉浸阅读层模块
-// 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
-// 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
+// 职责：阅读模式有两条路径——
+//   降噪未全开：不盖阅读层，在真实页面上按开关隐藏噪音（不拆节点，保留原布局）；
+//   四个细分全开：在 Shadow DOM 里只展示正文克隆。
+// 不修改原页面的父子结构。
 // 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath /
 // readingStats / aiEnhance。
 // 调用者：content.js 的 applyAll()/restoreOriginalPage() 调用 render()/remove()/
@@ -27,6 +29,7 @@ window.INS_Reader = window.INS_Reader || {};
     renderedArticle: null, // 克隆体中的正文节点，供 aiEnhance 落地改写/高亮
     lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
     pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
+    livePageMode: false, // 未全开降噪时作用在真实页面上；四开关全开时为 false，使用正文阅读层
   };
 
   function INS_setHiddenCount(count) {
@@ -73,6 +76,11 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_lockOriginalPage() {
+    // 真实页降噪需要继续滚动原页面，不能把 overflow 锁死。
+    if (state.livePageMode) {
+      INS_unlockOriginalPage();
+      return;
+    }
     if (state.bodyOverflowBackup === null) {
       state.bodyOverflowBackup = document.documentElement.style.overflow;
     }
@@ -82,6 +90,68 @@ window.INS_Reader = window.INS_Reader || {};
   function INS_unlockOriginalPage() {
     document.documentElement.style.overflow = state.bodyOverflowBackup || '';
     state.bodyOverflowBackup = null;
+  }
+
+  // 原页靠站点 CSS 隐藏的节点（登录层、空蒙层等），克隆进 Shadow 后会丢掉那些规则
+  // 而变成可见的白罩。按相同文档顺序把 display/visibility 写到克隆节点的内联样式上。
+  function INS_copyHiddenComputedStyles(sourceRoot, cloneRoot) {
+    const sourceEls = sourceRoot.querySelectorAll('*');
+    const cloneEls = cloneRoot.querySelectorAll('*');
+    const limit = Math.min(sourceEls.length, cloneEls.length);
+    for (let i = 0; i < limit; i++) {
+      let computed;
+      try {
+        computed = window.getComputedStyle(sourceEls[i]);
+      } catch (error) {
+        continue;
+      }
+      if (computed.display === 'none') cloneEls[i].style.display = 'none';
+      else if (computed.visibility === 'hidden') cloneEls[i].style.visibility = 'hidden';
+    }
+  }
+
+  function INS_resolveCloneArticle(bodyClone, sourceNode, path) {
+    const { articleLocator, domPath } = window.INS_Reader;
+    const byLocator = articleLocator.findArticleRootIn?.(bodyClone, sourceNode);
+    if (byLocator) return byLocator;
+    if (path) return domPath.resolveChildIndexPath(bodyClone, path);
+    return null;
+  }
+
+  function INS_unwrapBodyClone(bodyClone) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ins-reader-page';
+    while (bodyClone.firstChild) wrap.appendChild(bodyClone.firstChild);
+    return wrap;
+  }
+
+  function INS_syncAutoplay(prefs) {
+    if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
+      INS_pauseAutoplayMedia();
+    } else {
+      INS_restoreAutoplayMedia();
+    }
+  }
+
+  function INS_teardownOverlay() {
+    state.renderedArticle = null;
+    if (state.readerHost) {
+      state.readerHost.remove();
+      state.readerHost = null;
+    }
+  }
+
+  function INS_renderLivePage(sourceNode, prefs) {
+    const { noiseFilter } = window.INS_Reader;
+    state.livePageMode = true;
+    INS_teardownOverlay();
+    INS_setHiddenCount(noiseFilter.applyLiveHide(sourceNode));
+    INS_syncAutoplay(prefs);
+    state.articleText = sourceNode.textContent || '';
+    // 落点留在真实正文，aiEnhance 会走原页面分支而不是 Shadow。
+    state.renderedArticle = null;
+    window.INS_Reader.aiEnhance.reapply();
+    return true;
   }
 
   function INS_render() {
@@ -99,28 +169,31 @@ window.INS_Reader = window.INS_Reader || {};
     }
     state.lastFeasibilityReason = null;
 
+    if (!noiseFilter.isStrictArticleMode(prefs)) {
+      return INS_renderLivePage(sourceNode, prefs);
+    }
+
+    noiseFilter.clearLiveHide();
+    state.livePageMode = false;
+
     const host = INS_ensureReaderHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = '';
 
-    // 先记录正文节点在真实 DOM 中的下标路径，再克隆**整个 body**（而非只克隆正文节点）：
-    // 广告/侧边栏/评论等干扰元素与正文在 DOM 树中是平级关系，必须存在于克隆体里，
-    // 降噪选择器才能命中它们。克隆会产生全新的节点身份，因此清理完再用这条路径
-    // 在克隆体里重新定位出等价的正文节点。
-    const path = domPath.getChildIndexPath(sourceNode, document.body);
+    // 正文节点必须在删除之前定位：删完再按下标找会错位。
+    const path = sourceNode === document.body ? null : domPath.getChildIndexPath(sourceNode, document.body);
     const bodyClone = document.body.cloneNode(true);
-    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone));
+    INS_copyHiddenComputedStyles(document.body, bodyClone);
+    const articleClone = INS_resolveCloneArticle(bodyClone, sourceNode, path);
+    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone, articleClone));
+    INS_syncAutoplay(prefs);
 
-    // 自动播放的暂停必须作用于原页面（克隆体里的播放器不会发声），因此单独处理
-    if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
-      INS_pauseAutoplayMedia();
-    } else {
-      INS_restoreAutoplayMedia();
-    }
-    const clone = (path && domPath.resolveChildIndexPath(bodyClone, path)) || bodyClone;
-    state.articleText = clone.textContent || '';
-    state.renderedArticle = clone;
+    const pageClone = INS_unwrapBodyClone(bodyClone);
+    const mountedArticle = articleClone && pageClone.contains(articleClone) ? articleClone : null;
+    const clone = mountedArticle || pageClone;
+    state.articleText = (mountedArticle || clone).textContent || '';
+    state.renderedArticle = mountedArticle || clone;
 
     const typographyEnabled = prefs.typographyEnabled !== false;
     const theme = { ...prefs.customColors, accent: '#FFB800' };
@@ -228,9 +301,11 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_remove() {
+    window.INS_Reader.noiseFilter.clearLiveHide();
     INS_restoreAutoplayMedia();
     INS_setHiddenCount(0);
     state.renderedArticle = null;
+    state.livePageMode = false;
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;

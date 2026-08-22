@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 降噪清理模块
-// 职责：维护降噪选择器规则组，对 DOM 克隆体执行清理（不触碰原页面）。
+// 职责：维护降噪选择器规则组。未全开细分时对真实页面做可逆隐藏；
+// 四开关全开时对 DOM 克隆体执行清理（不触碰原页面结构）。
 // 依赖 INS_Reader.prefsStore 读取用户当前开启的降噪类别。
-// 调用者：reader-layer.js 的 render() 调用 stripNoiseFromClone()；
-// panel-ui.js 读取 NOISE_GROUPS 的 key 列表来渲染降噪类别开关。
+// 调用者：reader-layer.js 的 render() 调用 stripNoiseFromClone() / isStrictArticleMode()；
+// panel-ui.js 读取 UI_NOISE_KEYS 来渲染降噪类别开关。
 
 window.INS_Reader = window.INS_Reader || {};
 
@@ -16,22 +17,42 @@ window.INS_Reader = window.INS_Reader || {};
     // 会员/登录墙推销 UI：常见于 CSDN、掘金等技术博客站——蒙层遮挡正文、
     // 求关注/求登录浮层、VIP 购买卡片，混在正文容器内部而非平级兄弟节点。
     marketing: ['[class*="vip-mask"]', '[class*="mask-dark"]', '[class*="article-vip"]', '[class*="openvippay"]', '[class*="unlogin"]', '[class*="login-mask"]'],
-    // 屏蔽所有视频：把视频容器整体从克隆体里摘掉。部分站点的正文本身就是视频
+    // 屏蔽视频动画：把视频容器整体从克隆体里摘掉。部分站点的正文本身就是视频
     // （教程/评测），全屏蔽后阅读层可能为空，因此仍由用户自行控制该选项。
     blockAllVideos: ['video', 'iframe[src*="youtube"]', 'iframe[src*="bilibili"]', 'iframe[src*="vimeo"]', 'iframe[src*="player"]', '[class*="video-player"]', '[class*="videoPlayer"]'],
   };
 
-  function INS_activeRules() {
-    const prefs = window.INS_Reader.prefsStore.get();
-    const groups = prefs.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
+  // 面板上四个细分开关。只有它们全部开启时，阅读层才从整页克隆收成正文。
+  const UI_NOISE_KEYS = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
+
+  function INS_uniqueSelectors(generic, site) {
+    const seen = new Set();
+    const out = [];
+    for (const selector of [...generic, ...(site || [])]) {
+      if (!selector || seen.has(selector)) continue;
+      seen.add(selector);
+      out.push(selector);
+    }
+    return out;
+  }
+
+  function INS_isStrictArticleMode(prefs) {
+    const current = prefs || window.INS_Reader.prefsStore.get();
+    if (!current.noiseReduction) return false;
+    const groups = current.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
+    return UI_NOISE_KEYS.every((key) => groups[key]);
+  }
+
+  function INS_activeRules(prefs) {
+    const current = prefs || window.INS_Reader.prefsStore.get();
+    const groups = current.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
     const siteGroups = window.INS_Reader.siteAdapters?.getNoiseSelectors?.() || {};
-    // 站点适配器提供某个分类时，以站点规则为准，避免通用模糊选择器
-    // （例如 [class*="comment"] / video）误伤该站点的正文或侧栏。
+    const strict = INS_isStrictArticleMode(current);
+    // 整页模式只执行面板上能看见的分类，避免 ads/marketing 在没有对应按钮时偷偷删节点。
+    // 四开关全开进入正文模式时，再叠上 ads/marketing。
+    const keys = strict ? Object.keys(NOISE_GROUPS) : UI_NOISE_KEYS;
     const mergedGroups = Object.fromEntries(
-      Object.keys(NOISE_GROUPS).map((key) => [
-        key,
-        siteGroups[key]?.length ? siteGroups[key] : NOISE_GROUPS[key],
-      ])
+      keys.map((key) => [key, INS_uniqueSelectors(NOISE_GROUPS[key] || [], siteGroups[key])])
     );
     // 分类之间使用并集语义：任意一个已开启的分类命中节点，节点就会被移除。
     return Object.entries(mergedGroups)
@@ -41,12 +62,26 @@ window.INS_Reader = window.INS_Reader || {};
       );
   }
 
+  function INS_isProtected(el, protectRoot) {
+    if (!protectRoot || !el) return false;
+    if (el === protectRoot) return true;
+    // 正文的祖先不能删：删掉会把正文一起带走，阅读层变白。
+    return el.contains(protectRoot);
+  }
+
+  function INS_isExtensionHost(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const id = el.id;
+    return id === 'ins-reader-host' || id === 'ins-reader-panel-host' || id === 'ins-reader-ai-card-host';
+  }
+
   // 返回移除的元素数量。cloneRoot 必须是克隆体，绝不作用于原始 DOM。
-  function INS_stripNoiseFromClone(cloneRoot) {
+  // protectRoot 是克隆体里的正文节点：命中它或其祖先时跳过删除。
+  function INS_stripNoiseFromClone(cloneRoot, protectRoot) {
     const prefs = window.INS_Reader.prefsStore.get();
     if (!prefs.noiseReduction) return 0;
     let count = 0;
-    for (const { selector } of INS_activeRules()) {
+    for (const { selector } of INS_activeRules(prefs)) {
       let elements;
       try {
         elements = cloneRoot.querySelectorAll(selector);
@@ -60,6 +95,7 @@ window.INS_Reader = window.INS_Reader || {};
       }
       elements.forEach((el) => {
         if (!el.parentNode) return;
+        if (INS_isProtected(el, protectRoot)) return;
         el.remove();
         count += 1;
       });
@@ -67,8 +103,91 @@ window.INS_Reader = window.INS_Reader || {};
     return count;
   }
 
+  const LIVE_HIDE_ATTR = 'data-ins-noise-hide';
+  const LIVE_STYLE_ID = 'ins-reader-live-noise-style';
+
+  function INS_selectorTouchesProtect(selector, protectRoot) {
+    if (!protectRoot) return false;
+    try {
+      const nodes = document.body.querySelectorAll(selector);
+      for (const el of nodes) {
+        if (INS_isProtected(el, protectRoot)) return true;
+      }
+    } catch (error) {
+      return true;
+    }
+    return false;
+  }
+
+  function INS_setLiveHideCss(selectors) {
+    let style = document.getElementById(LIVE_STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = LIVE_STYLE_ID;
+      document.documentElement.appendChild(style);
+    }
+    const rules = [`[${LIVE_HIDE_ATTR}]{display:none !important}`];
+    for (const selector of selectors) {
+      rules.push(`${selector}{display:none !important}`);
+    }
+    style.textContent = rules.join('\n');
+  }
+
+  function INS_clearLiveHide() {
+    document.querySelectorAll(`[${LIVE_HIDE_ATTR}]`).forEach((el) => {
+      el.removeAttribute(LIVE_HIDE_ATTR);
+    });
+    const style = document.getElementById(LIVE_STYLE_ID);
+    if (style) style.remove();
+  }
+
+  // 未全开细分时在真实页面上按开关隐藏噪音，不拆 DOM、不进 Shadow，
+  // 这样侧栏/评论关掉隐藏后仍留在原来的 grid/flex 位置。
+  // 选择器会同时写入 stylesheet：新浪底部图示墙是异步插入的，只打属性会漏掉晚到的节点。
+  function INS_applyLiveHide(protectRoot) {
+    document.querySelectorAll(`[${LIVE_HIDE_ATTR}]`).forEach((el) => {
+      el.removeAttribute(LIVE_HIDE_ATTR);
+    });
+    const prefs = window.INS_Reader.prefsStore.get();
+    if (!prefs.noiseReduction) {
+      const style = document.getElementById(LIVE_STYLE_ID);
+      if (style) style.remove();
+      return 0;
+    }
+    const cssSelectors = [];
+    let count = 0;
+    for (const { selector, category } of INS_activeRules(prefs)) {
+      let elements;
+      try {
+        elements = document.body.querySelectorAll(selector);
+      } catch (error) {
+        console.warn('[INS_Reader][noise-filter] 忽略无效降噪选择器', {
+          selector,
+          message: error && error.message ? error.message : String(error),
+        });
+        continue;
+      }
+      if (!INS_selectorTouchesProtect(selector, protectRoot)) {
+        cssSelectors.push(selector);
+      }
+      elements.forEach((el) => {
+        if (INS_isExtensionHost(el) || INS_isProtected(el, protectRoot)) return;
+        if (el.closest('#ins-reader-host, #ins-reader-panel-host, #ins-reader-ai-card-host')) return;
+        el.setAttribute(LIVE_HIDE_ATTR, category);
+        count += 1;
+      });
+    }
+    INS_setLiveHideCss(cssSelectors);
+    return count;
+  }
+
   window.INS_Reader.noiseFilter = {
     NOISE_GROUPS,
+    UI_NOISE_KEYS,
+    LIVE_HIDE_ATTR,
+    isStrictArticleMode: INS_isStrictArticleMode,
     stripNoiseFromClone: INS_stripNoiseFromClone,
+    applyLiveHide: INS_applyLiveHide,
+    clearLiveHide: INS_clearLiveHide,
   };
 })();

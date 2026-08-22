@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 release_dir="$repo_root/release"
-package_path="$release_dir/calmread-chrome-extension-0.2.6-noise-video-scope.zip"
+package_path="$release_dir/calmread-chrome-extension-0.2.7-fullpage-noise.zip"
 
 mkdir -p "$release_dir"
 rm -f "$package_path"

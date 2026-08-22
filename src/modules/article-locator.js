@@ -88,7 +88,26 @@ window.INS_Reader = window.INS_Reader || {};
     return INS_pickBestCandidate();
   }
 
+  // 在克隆体里找回与真实页面对应的正文节点。优先站点选择器，其次沿用源节点 id。
+  function INS_findArticleRootIn(root, sourceNode) {
+    if (!root || !root.querySelector) return null;
+    const siteRoot = window.INS_Reader.siteAdapters?.findArticleRootIn?.(root);
+    if (siteRoot) return siteRoot;
+    const sourceId = sourceNode && sourceNode.id;
+    if (sourceId) {
+      try {
+        const escaped = window.CSS && CSS.escape ? CSS.escape(sourceId) : sourceId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const byId = root.querySelector(`#${escaped}`);
+        if (byId) return byId;
+      } catch (error) {
+        // id 含特殊字符时跳过，由调用方用克隆前记下的路径兜底。
+      }
+    }
+    return null;
+  }
+
   window.INS_Reader.articleLocator = {
     findArticleRoot: INS_findArticleRoot,
+    findArticleRootIn: INS_findArticleRootIn,
   };
 })();

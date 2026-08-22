@@ -14,9 +14,13 @@ window.INS_Reader = window.INS_Reader || {};
     );
   }
 
+  function findArticleRootIn(root) {
+    if (!isSinaPage() || !root || !root.querySelector) return null;
+    return root.querySelector('#article, .article-content-left .article');
+  }
+
   function findArticleRoot() {
-    if (!isSinaPage()) return null;
-    return document.querySelector('#article, .article-content-left .article');
+    return findArticleRootIn(document);
   }
 
   function getNoiseSelectors() {
@@ -27,7 +31,8 @@ window.INS_Reader = window.INS_Reader || {};
       sidebar: ['.article-content-right', '.page-right-bar'],
       // 正文评论区，不包含右栏的评论排行榜（#read-comment）。
       comments: ['#bottom_sina_comment', '.blk-comment'],
-      // 顶部横幅、站点导航、文章底部横幅和动态浮层。
+      // 顶部横幅、站点导航、二维码和广告浮层。不把 .modal-content 算进来，
+      // 以免误删包着正文的壳；原页 display:none 的蒙层由阅读层拷贝隐藏态处理。
       banners: [
         '.top-banner',
         '#sina-header',
@@ -36,22 +41,31 @@ window.INS_Reader = window.INS_Reader || {};
         '#article-bottom',
         '.sinaad-toolkit-box',
         '.qrcode-modal',
+        '[class*="qrcode"]',
+        '[id*="qrcode"]',
+        '[class*="qr-code"]',
+        '[class*="ewm"]',
         '.modal-overlay',
-        '.modal-content',
       ],
       marketing: ['.modal-content', '[id*="login"]', '[class*="login"]'],
-      // 视频/动画统一归入该分类，包含正文媒体和右侧视频推荐卡片。
+      // 与通用 video/iframe 规则合并：正文播放器、右栏视频卡，以及正文下方
+      // 动态插入的图示/广告墙（赛博对话等栏目卡、带「广告」标的图片网格）。
+      // 特别声明在 #article 内，不会被「#article 后面的兄弟」选中。
       blockAllVideos: [
-        '#article video',
-        '#article iframe[src*="video"]',
-        '#article iframe[src*="player"]',
-        '#article [class*="video-player"]',
-        '#article [class*="videoPlayer"]',
-        '#article [class*="article-video"]',
-        '#article [data-video]',
-        '#article [data-video-id]',
+        '[class*="article-video"]',
+        '[data-video]',
+        '[data-video-id]',
         '.news-video-miaopai',
         '.img-video-box',
+        '#article-bottom',
+        '.article-bottom',
+        '#wxFollow',
+        '#timeline_pc_tmpl',
+        '#card_weibo_topic',
+        '#sina_keyword_ad_area2',
+        '.sina_keyword_ad_area',
+        '[class*="sinaads"]',
+        '.article-content-left > #article ~ *:not(#bottom_sina_comment):not(.blk-comment)',
       ],
     };
   }
@@ -59,6 +73,7 @@ window.INS_Reader = window.INS_Reader || {};
   window.INS_Reader.siteAdapters = {
     isSinaPage,
     findArticleRoot,
+    findArticleRootIn,
     getNoiseSelectors,
   };
 })();
