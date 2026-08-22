@@ -70,6 +70,11 @@ window.INS_Reader = window.INS_Reader || {};
   function INS_unlockOriginalPage() {
     document.documentElement.style.overflow = state.bodyOverflowBackup || '';
     state.bodyOverflowBackup = null;
+    // style.overflow = '' 只是清空属性值，留下的 style="" 仍是一条新增的空属性；
+    // 页面原本没有 style 属性时，这里补一刀彻底移除，还原成打开阅读模式之前的原始标记。
+    if (document.documentElement.getAttribute('style') === '') {
+      document.documentElement.removeAttribute('style');
+    }
   }
 
   function INS_render() {

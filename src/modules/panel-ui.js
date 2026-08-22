@@ -730,6 +730,7 @@ window.INS_Reader = window.INS_Reader || {};
         prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
+        INS_render();
       });
     }
 
