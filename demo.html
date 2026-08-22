@@ -6,24 +6,87 @@
 <title>INS_Reader · Demo（模拟网页 + 插件面板）</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; background: #e9ece8; }
+  body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; background: #f0f0f0; }
 
   .demo-hint {
     background: #177d72; color: #fff; text-align: center; padding: 8px 16px; font-size: 13px;
   }
   .demo-hint b { text-decoration: underline; cursor: pointer; }
 
-  /* ---- 模拟的“普通网页” ---- */
+  /* ---- 模拟的“澎湃新闻风格”网页 ----
+     真实 thepaper.cn 的实际配色/像素级样式无法通过文本抓取工具还原（搜索与网页正文提取
+     都拿不到 CSS 数值），这里按其公开可辨认的视觉特征做了一版尽量贴近的近似：
+     白底 + 黑字的克制型门户导航，红色只作为 Logo 色块/分类标签/当前栏目的强调色出现，
+     而不是整条导航栏铺满红色——铺满红色是更常见的"仿新闻站模板"做法，但不是真实澎湃的风格。 */
   .fake-site-nav {
-    background: #1e2723; color: #fff; height: 56px; display: flex; align-items: center;
-    padding: 0 32px; gap: 28px; font-size: 14px;
+    background: #fff; color: #1a1a1a; height: 64px; display: flex; align-items: center;
+    padding: 0 32px; gap: 28px; font-size: 14px; border-bottom: 2px solid #b3121d;
   }
-  .fake-site-nav .logo { font-weight: 700; font-size: 18px; margin-right: 20px; }
-  .fake-site-nav a { color: #cfd8d3; text-decoration: none; }
+  .fake-site-nav .logo-mark {
+    display: inline-block; width: 20px; height: 20px; background: #b3121d; border-radius: 4px; margin-right: 8px;
+  }
+  .fake-site-nav .logo { font-weight: 700; font-size: 20px; margin-right: 20px; color: #1a1a1a; display: flex; align-items: center; }
+  .fake-site-nav a { color: #333; text-decoration: none; }
+  .fake-site-nav a.active { color: #b3121d; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+  .fake-site-nav .nav-utility { margin-left: auto; display: flex; gap: 16px; font-size: 12px; color: #999; }
 
   .fake-banner {
-    background: #b95042; color: #fff; text-align: center; padding: 10px; font-size: 13px;
+    background: #c9202c; color: #fff; text-align: center; padding: 10px; font-size: 13px;
+    animation: fake-pulse 1.4s ease-in-out infinite;
   }
+  .fake-banner .countdown { font-weight: 700; letter-spacing: 1px; }
+  @keyframes fake-pulse {
+    0%, 100% { background: #c9202c; }
+    50% { background: #ff3b3b; }
+  }
+
+  /* ---- 浮夸浮层弹窗广告（page load 后弹出，挂在 body 下、main.article 之外） ---- */
+  .modal-overlay.popup-banner {
+    position: fixed; inset: 0; z-index: 999; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .popup-banner .popup-card {
+    background: #fff; border-radius: 12px; padding: 32px 36px; max-width: 360px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3); position: relative;
+    animation: fake-pop-in 0.35s ease-out;
+  }
+  @keyframes fake-pop-in {
+    from { transform: scale(0.85); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .popup-banner .popup-close {
+    position: absolute; top: 10px; right: 14px; cursor: pointer; font-size: 18px; color: #999; border: none; background: none;
+  }
+  .popup-banner .popup-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin: 6px 0 10px; }
+  .popup-banner .popup-desc { font-size: 13px; color: #666; margin: 0 0 20px; line-height: 1.6; }
+  .popup-banner .popup-cta {
+    display: inline-block; background: #c9202c; color: #fff; padding: 10px 28px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; cursor: pointer; border: none;
+  }
+
+  /* ---- 悬浮促销角标（fixed 定位，挂在 body 下） ---- */
+  .floating-promo-banner {
+    position: fixed; right: 20px; bottom: 90px; z-index: 998;
+    background: linear-gradient(135deg, #c9202c, #7a1417); color: #fff; padding: 14px 18px; border-radius: 10px;
+    font-size: 13px; box-shadow: 0 10px 30px rgba(201,32,44,0.4);
+    animation: fake-float 2.2s ease-in-out infinite;
+  }
+  @keyframes fake-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  /* ---- 底部订阅浮条（fixed 定位，挂在 body 下，另一种常见弹窗形态） ---- */
+  .subscribe-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 997;
+    background: #1a1a1a; color: #fff; padding: 12px 24px; display: flex; align-items: center;
+    justify-content: space-between; gap: 16px; font-size: 13px; box-shadow: 0 -6px 20px rgba(0,0,0,0.25);
+  }
+  .subscribe-bar .subscribe-cta {
+    background: #c9202c; color: #fff; border: none; padding: 8px 20px; border-radius: 999px;
+    font-weight: 600; cursor: pointer; flex: none;
+  }
+  .subscribe-bar .subscribe-close { background: none; border: none; color: #999; font-size: 16px; cursor: pointer; flex: none; }
 
   .fake-layout {
     display: grid; grid-template-columns: 220px 1fr 260px; gap: 0; min-height: 100vh;
@@ -31,146 +94,353 @@
   }
 
   .fake-sidebar {
-    background: #f6f7f5; border-right: 1px solid #e4e6e2; padding: 24px 18px; font-size: 13px; color: #56625c;
+    background: #f7f7f7; border-right: 1px solid #e8e8e8; padding: 24px 18px; font-size: 13px; color: #666;
   }
-  .fake-sidebar h4 { font-size: 12px; color: #87908a; margin: 0 0 10px; }
+  .fake-sidebar h4 { font-size: 12px; color: #888; margin: 0 0 10px; }
   .fake-sidebar .ad-block {
-    margin-top: 30px; background: #e9e6d9; padding: 14px; font-size: 13px; color: #5a5547; line-height: 1.6;
+    margin-top: 16px; background: #fdeceb; padding: 14px; font-size: 13px; color: #a13c33; line-height: 1.6;
   }
+  .fake-sidebar .qr-widget {
+    margin-top: 16px; padding: 14px; background: #f7f7f7; border: 1px solid #e5e5e5; text-align: center;
+  }
+  .fake-sidebar .qr-widget .qr-pattern {
+    width: 84px; height: 84px; margin: 8px auto; background-image:
+      repeating-conic-gradient(#1a1a1a 0% 25%, #fff 0% 50%);
+    background-size: 12px 12px; border: 4px solid #1a1a1a;
+  }
+  .fake-sidebar .qr-widget .qr-caption { font-size: 12px; color: #666; }
 
   main.article {
     padding: 40px 48px;
   }
-  main.article .kicker { color: #6c7b73; font-size: 12px; margin-bottom: 10px; }
-  main.article h1 { font-size: 30px; line-height: 1.4; margin: 0 0 16px; color: #202a26; }
-  main.article .byline { color: #7c8580; font-size: 12px; margin-bottom: 24px; }
-  main.article p { font-size: 16px; line-height: 1.9; color: #3b4540; margin: 0 0 18px; }
+  main.article .kicker {
+    display: inline-flex; align-items: center; gap: 8px; color: #b3121d; font-weight: 700; font-size: 12px;
+    margin-bottom: 14px; border: 1px solid #b3121d; border-radius: 3px; padding: 2px 8px;
+  }
+  main.article .kicker .kicker-time { color: #999; font-weight: 400; border-left: 1px solid #e5c9c9; padding-left: 8px; }
+  main.article h1 { font-size: 28px; line-height: 1.4; margin: 0 0 16px; color: #1a1a1a; }
+  main.article .byline { color: #888; font-size: 12px; margin-bottom: 24px; }
+  main.article p { font-size: 16px; line-height: 1.9; color: #333; margin: 0 0 18px; }
 
   .related-recommend {
-    margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5;
   }
-  .related-recommend h4 { font-size: 13px; color: #6a756e; }
-  .related-recommend .item { padding: 10px 0; font-size: 13px; color: #56625c; border-top: 1px solid #eee; }
+  .related-recommend h4 { font-size: 13px; color: #888; }
+  .related-recommend .item { padding: 10px 0; font-size: 13px; color: #666; border-top: 1px solid #eee; }
 
   .comment-section {
-    margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+    margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e5e5;
   }
-  .comment-section h4 { font-size: 13px; color: #6a756e; }
-  .comment-section .item { padding: 10px 0; font-size: 13px; color: #56625c; }
+  .comment-section h4 { font-size: 13px; color: #888; }
+  .comment-section .item { padding: 10px 0; font-size: 13px; color: #666; }
 
   .fake-aside-right {
-    background: #fafbfa; border-left: 1px solid #edf0ec; padding: 24px 18px;
+    background: #fafafa; border-left: 1px solid #ededed; padding: 24px 18px;
   }
   .promo-banner-inline {
-    background: repeating-linear-gradient(120deg, #536660, #536660 2px, #455751 2px 4px);
-    color: #e8f0ec; height: 120px; padding: 16px; font-size: 14px; margin-bottom: 20px;
+    background: repeating-linear-gradient(120deg, #7a1f22, #7a1f22 2px, #5c1417 2px 4px);
+    color: #fbe4e4; height: 120px; padding: 16px; font-size: 14px; margin-bottom: 20px;
   }
   .fake-aside-right .recommend-card {
-    font-size: 12px; color: #56625c; padding: 10px 0; border-top: 1px solid #e5e9e4;
+    font-size: 12px; color: #666; padding: 10px 0; border-top: 1px solid #e5e5e5;
   }
 
+  /* 真实澎湃新闻的页脚是多栏浅色布局（关于澎湃/加入澎湃/联系我们等 + 社交矩阵 + 备案信息），
+     不是纯黑通栏——这里按其结构近似还原，同样受限于无法拿到精确像素/色值。 */
   footer.fake-footer {
-    background: #1e2723; color: #97a29c; padding: 30px 48px; font-size: 12px; grid-column: 1 / -1;
+    background: #f5f5f5; color: #999; padding: 30px 48px; font-size: 12px; grid-column: 1 / -1;
+    border-top: 1px solid #e5e5e5;
   }
+  .fake-footer .footer-columns { display: flex; gap: 48px; margin-bottom: 20px; flex-wrap: wrap; }
+  .fake-footer .footer-columns h5 { font-size: 12px; color: #666; margin: 0 0 10px; font-weight: 700; }
+  .fake-footer .footer-columns a { display: block; color: #999; text-decoration: none; line-height: 2; }
+  .fake-footer .footer-legal { border-top: 1px solid #e5e5e5; padding-top: 14px; line-height: 1.9; color: #b3b3b3; }
 
   /* ---- 正文内的干扰元素：与正文平级的横幅/侧栏/页脚不会出现在阅读层里，
      这些放在 main.article 内部，才能演示对应降噪开关的实际效果 ---- */
   main.article .ad-block.advert-inline {
-    margin: 10px 0 22px; padding: 14px; background: #e9e6d9; color: #5a5547; font-size: 13px; line-height: 1.6;
+    margin: 10px 0 22px; padding: 14px; background: #fdeceb; color: #a13c33; font-size: 13px; line-height: 1.6;
   }
   main.article aside.fake-sidebar-inline {
-    margin: 0 0 22px; padding: 14px 16px; background: #f2f6f4; border: 1px solid #e2e9e5; font-size: 13px; color: #56625c;
+    margin: 0 0 22px; padding: 14px 16px; background: #fbf6f6; border-left: 3px solid #b3121d; font-size: 13px; color: #333;
   }
-  main.article aside.fake-sidebar-inline h4 { margin: 0 0 6px; font-size: 12px; color: #6a756e; }
+  main.article aside.fake-sidebar-inline h4 { margin: 0 0 6px; font-size: 12px; color: #b3121d; }
   main.article .vip-mask {
-    margin: 0 0 22px; padding: 16px; background: #fff4e9; border: 1px dashed #d9a35b; color: #8a5a1f; font-size: 13px;
+    margin: 0 0 22px; padding: 20px; border-radius: 10px; color: #fff; font-size: 14px;
+    background: linear-gradient(135deg, #c9202c, #f0524a);
+    box-shadow: 0 8px 24px rgba(201,32,44,0.35);
   }
-  main.article .vip-mask a { color: #b9601c; text-decoration: underline; }
+  main.article .vip-mask .vip-badge {
+    display: inline-block; background: #fff; color: #c9202c; font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; animation: fake-pulse-badge 1.2s ease-in-out infinite;
+  }
+  @keyframes fake-pulse-badge {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  main.article .vip-mask a {
+    display: inline-block; margin-top: 10px; background: #fff; color: #c9202c; text-decoration: none;
+    padding: 8px 20px; border-radius: 999px; font-weight: 600; font-size: 13px;
+  }
+
+  /* ---- 评论区加料：头像/点赞/热评徽标 ---- */
+  main.article .comment-section .item {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-top: 1px solid #eee;
+  }
+  main.article .comment-section .item:first-child { border-top: none; }
+  .comment-avatar {
+    flex: none; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .comment-body { flex: 1; }
+  .comment-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 11px; color: #999; }
+  .comment-hot-badge {
+    background: #b3121d; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 700;
+  }
+
+  /* ---- 相关推荐 / 侧边推荐卡片：渐变缩略图 + 热度标签 ---- */
+  .related-recommend .item, .fake-aside-right .recommend-card {
+    display: flex; gap: 10px; align-items: center;
+  }
+  .thumb-block {
+    flex: none; width: 56px; height: 40px; border-radius: 6px;
+  }
+  .related-recommend .item .item-meta, .fake-aside-right .recommend-card .card-meta { flex: 1; }
+  .hot-tag { color: #b3121d; font-size: 11px; font-weight: 600; }
+  .list-tag {
+    display: inline-block; color: #b3121d; font-size: 11px; border: 1px solid #e5c9c9; border-radius: 2px;
+    padding: 0 4px; margin-right: 6px;
+  }
+
+  /* ---- 侧边悬浮 APP 下载广告 ---- */
+  .app-download-ad {
+    margin-top: 20px; padding: 16px; text-align: center; border-radius: 10px; color: #fff;
+    background: linear-gradient(135deg, #c9202c, #1a1a1a);
+  }
+  .app-download-ad .app-cta {
+    display: inline-block; margin-top: 10px; background: #fff; color: #1a1a1a; font-weight: 700;
+    padding: 6px 18px; border-radius: 999px; font-size: 12px;
+  }
+
+  /* ---- 页脚社交图标 + 友情链接堆砌 ---- */
+  .fake-footer .footer-social { display: flex; gap: 10px; margin-bottom: 12px; }
+  .fake-footer .footer-social span {
+    width: 26px; height: 26px; border-radius: 50%; background: #e5e5e5; color: #999; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 12px;
+  }
   main.article .video-player-wrap { margin: 0 0 22px; }
-  main.article .video-caption { font-size: 12px; color: #7c8580; margin: 0 0 8px; }
+  main.article .video-caption { font-size: 12px; color: #888; margin: 0 0 8px; }
   main.article .fake-video-player {
-    width: 100%; max-width: 420px; height: 200px; background: #101512; display: block; border-radius: 4px;
+    width: 100%; max-width: 420px; height: 200px; background: #141414; display: block; border-radius: 4px;
   }
 </style>
 </head>
 <body>
 
   <div class="demo-hint">
-    这是一个模拟的"普通网页"，用来演示 INS_Reader 插件效果 —— <b id="open-panel-btn">点击这里打开 INS_Reader 面板</b>
+    这是一个模拟“澎湃新闻风格”的网页（Insta360 X6 发布报道范例，与真实澎湃新闻无关），用来演示 INS_Reader 插件效果 —— <b id="open-panel-btn">点击这里打开 INS_Reader 面板</b>
   </div>
 
-  <div class="fake-banner">🔥 限时促销广告横幅 · 立即购买享 8 折优惠 · advert-banner</div>
+  <div class="fake-banner">🔥 Insta360 X6 首发预售 · 立即下单立减 $50 · 优惠倒计时 <span class="countdown" id="banner-countdown">00:59:59</span> · advert-banner</div>
 
   <nav class="fake-site-nav">
-    <span class="logo">FakeNews 日报</span>
-    <a href="#">首页</a><a href="#">科技</a><a href="#">财经</a><a href="#">生活</a><a href="#">视频</a>
+    <span class="logo"><span class="logo-mark"></span>澎湃新闻<span style="font-weight:400; font-size:12px; margin-left:8px; color:#999;">专注时政与思想</span></span>
+    <a href="#">时事</a><a href="#">思想</a><a href="#">财经</a><a href="#" class="active">科技</a><a href="#">生活</a><a href="#">视频</a>
+    <span class="nav-utility"><a href="#" style="color:#999;">下载客户端</a><a href="#" style="color:#999;">登录</a></span>
   </nav>
 
   <div class="fake-layout">
     <aside class="fake-sidebar">
       <h4>热门分类</h4>
-      <p>科技前沿</p><p>财经观察</p><p>生活方式</p><p>深度报道</p>
+      <p>时事精选</p><p>科技前沿</p><p>财经观察</p><p>生活方式</p><p>深度报道</p>
       <div class="ad-block advert-block">
         <em>广告推广</em><br />
-        这是一段侧边栏广告文案，用来测试降噪功能是否能正确识别并隐藏它。
+        Insta360 X6 现货首发，官网直购立减 $50。
+      </div>
+      <div class="ad-block advert-block2">
+        <em>广告推广</em><br />
+        全景相机配件年终清仓，5 折起，仅剩 23 件。
+      </div>
+      <div class="qr-widget">
+        <div class="qr-pattern"></div>
+        <div class="qr-caption">📱 扫码关注 影石Insta360 公众号<br />新品优惠资讯早知道</div>
       </div>
     </aside>
 
     <main class="article">
-      <p class="kicker">科技 · 深度</p>
-      <h1>为什么"无干扰阅读"正在成为新的产品设计趋势</h1>
-      <p class="byline">作者：编辑部 · 5 分钟阅读</p>
+      <p class="kicker">科技 · 数码影像<span class="kicker-time">2 小时前</span></p>
+      <h1>影石十周年推出旗舰新品 Insta360 X6：双 1 英寸传感器、8K 50 帧，8 月 12 日已开售起售价 699.99 美元</h1>
+      <p class="byline">澎湃新闻记者 陈曦 综合报道 | 来源：澎湃新闻 · 科技频道 | 2026-08-22 09:41</p>
 
       <aside class="fake-sidebar-inline">
-        <h4>本文导读</h4>
-        <p>① 无干扰阅读趋势　② 技术实现　③ Demo 演示</p>
+        <h4>导读</h4>
+        <p>① 影石成立十周年推出新旗舰 X6，为 X 系列历史最大跃升　② 定制双 1/1.1 英寸传感器，进光量约为 X5 的四倍　③ 三芯片 AI 系统算力提升 500%，8 月 12 日起已正式开售</p>
       </aside>
 
-      <p>过去十年，互联网内容平台在商业化压力下不断堆叠推荐位、悬浮广告、订阅弹窗与社交分享按钮，用户的注意力被切割得越来越碎。对于注意力容易被打断的用户（例如 ADHD 群体）来说，这种"信息过载"的网页设计几乎是不友好的。</p>
+      <p>今年是影石 Insta360 进入全景相机赛道的第十个年头。北京时间 8 月，该公司正式发布新一代旗舰产品 Insta360 X6，官方称其为“X 系列历史上最大的一次飞跃”。新品已于 8 月 12 日在 Insta360 官网、亚马逊等渠道正式开售，标准套装起售价为 699.99 美元。</p>
 
       <div class="ad-block advert-inline">
-        <em>广告</em>——某某效率工具限时 5 折，立即抢购 »
+        <em>广告</em>——Insta360 X6 现货速抢，立即下单享官方赠品礼包 »
       </div>
 
-      <p>"INS_Reader"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
+      <p>硬件层面，X6 搭载定制双索尼 1/1.1 英寸方形传感器，实现完整的 1 英寸 360 度成像，传感器面积较前代 X5 提升约 33%，单帧进光量约为 X5 的四倍，在低光、强逆光与高对比度场景下能够保留更多画面细节。处理性能方面，机身搭载三芯片 AI 系统——一颗 8 核 3.3GHz 的 4nm 旗舰处理器搭配两颗专用图像处理芯片，整体算力较 X5 提升 500%，时钟速度提升 106%，同时功耗降低 35%。</p>
 
       <div class="vip-mask">
-        🔒 登录后可继续阅读全文，<a href="#">立即登录 / 开通会员</a>
+        <span class="vip-badge">首发促销</span><br />
+        🔒 登录 / 开通澎湃新闻会员，解锁全部产品评测详细数据与独家拆解图集，<a href="#">立即登录 / 开通会员</a>
       </div>
 
-      <p>技术实现上，正文识别通常借助 Mozilla 开源的 Readability.js（Firefox 阅读模式同款算法），通过文本密度、链接密度、DOM 结构等特征打分，定位出页面中"最像正文"的区块。而干扰元素的识别，则可以用一组启发式规则——常见的广告、侧边栏、评论区、弹窗横幅在类名、标签语义上都有较强的规律性，可以在不依赖机器学习的情况下达到不错的准确率。</p>
+      <p>低光表现是本次升级的重点之一：X6 新增两个环境光传感器以降低画面闪烁，AdaptiveTone 2.0 可对双镜头单独测光，每帧捕捉两次曝光以扩展动态范围。此外，新品原生支持杜比视界（Dolby Vision），并具备 AI 剪辑功能；在单镜头模式下最高可录制 5.7K 60 帧或 4K 120 帧视频，全景照片分辨率最高可达 1.2 亿像素。电池容量提升至 2600mAh，支持快充，22 分钟即可充至 80% 电量。</p>
+
+      <div class="ad-block advert-inline2">
+        <em>广告</em>——影石 X6 官方配件包限时 8 折，含自拍杆 + 快充套装 »
+      </div>
 
       <div class="video-player-wrap">
-        <p class="video-caption">▶ 文章配图视频（自动播放示例，静音循环）</p>
-        <video id="demo-autoplay-video" class="fake-video-player" autoplay muted loop playsinline></video>
+        <p class="video-caption">▶ Insta360 X6 全景样片自动播放演示（静音循环）</p>
+        <video id="demo-autoplay-video" class="fake-video-player" autoplay muted loop playsinline poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='200'%3E%3Crect width='420' height='200' fill='%23141414'/%3E%3Ccircle cx='210' cy='100' r='24' fill='%23e2493a'/%3E%3Ctext x='14' y='22' font-family='sans-serif' font-size='12' fill='%23999999'%3EDEMO AUTOPLAY VIDEO%3C/text%3E%3C/svg%3E"></video>
       </div>
 
-      <p>本 Demo 页面故意包含了顶部促销横幅、正文内广告、导读侧栏、会员登录墙、自动播放视频、右侧推荐卡片与底部评论区，用来直观演示"降噪"功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
+      <p>据 IDC 2026 年第一季度数据，Insta360 目前占据全球 360 相机市场约 71% 的价值份额。业内分析认为，X6 的推出将进一步巩固该品牌在全景影像赛道的领先优势。本 Demo 页面故意包含了顶部促销横幅、正文内广告、导读侧栏、会员登录墙、自动播放视频、底部订阅浮条、右侧推荐卡片与评论区，用来直观演示 INS_Reader“降噪”功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
 
       <div class="related-recommend">
         <h4>相关推荐</h4>
-        <div class="item">《大厂如何设计无障碍阅读体验》</div>
-        <div class="item">《注意力经济下的产品伦理》</div>
+        <div class="item">
+          <div class="thumb-block" style="background: linear-gradient(135deg,#f2994a,#f2c94c);"></div>
+          <div class="item-meta"><span class="list-tag">科技</span>《Insta360 X6 与 X5 全面参数对比：值不值得升级？》 <span class="hot-tag">🔥 8.2万浏览</span></div>
+        </div>
+        <div class="item">
+          <div class="thumb-block" style="background: linear-gradient(135deg,#56ccf2,#2f80ed);"></div>
+          <div class="item-meta"><span class="list-tag">评测</span>《横评：大疆 Osmo 360 vs Insta360 X6，谁是全景新王者》 <span class="hot-tag">🔥 12.6万浏览</span></div>
+        </div>
+        <div class="item">
+          <div class="thumb-block" style="background: linear-gradient(135deg,#6fcf97,#219653);"></div>
+          <div class="item-meta"><span class="list-tag">深度</span>《影石十年：从初代 X1 到旗舰 X6 的产品进化史》 <span class="hot-tag">🔥 6.4万浏览</span></div>
+        </div>
+        <div class="item">
+          <div class="thumb-block" style="background: linear-gradient(135deg,#bb6bd9,#9b51e0);"></div>
+          <div class="item-meta"><span class="list-tag">实测</span>《实测：X6 低光模式到底有多能打》 <span class="hot-tag">🔥 9.8万浏览</span></div>
+        </div>
       </div>
 
       <div class="comment-section">
-        <h4>评论区（3）</h4>
-        <div class="item">读者A：这个思路很实用，希望能支持更多网站。</div>
-        <div class="item">读者B：字号调节这个功能太需要了。</div>
-        <div class="item">读者C：降噪之后阅读体验确实好很多。</div>
+        <h4>评论区（6）</h4>
+        <div class="item">
+          <div class="comment-avatar" style="background:#c9202c;">A</div>
+          <div class="comment-body">读者A：等了大半年终于等到 X6 了，双 1 英寸传感器这个升级太实在了！
+            <div class="comment-meta"><span class="comment-hot-badge">热评</span><span>👍 128</span><span>3 小时前</span></div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="comment-avatar" style="background:#2f80ed;">B</div>
+          <div class="comment-body">读者B：699.99 美元什么时候出国行价，跪求早点上架。
+            <div class="comment-meta"><span>👍 76</span><span>5 小时前</span></div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="comment-avatar" style="background:#219653;">C</div>
+          <div class="comment-body">读者C：低光模式这次终于像样了，之前 X5 夜景一直被吐槽。
+            <div class="comment-meta"><span>👍 54</span><span>6 小时前</span></div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="comment-avatar" style="background:#9b51e0;">D</div>
+          <div class="comment-body">读者D：电池从 X5 升级到 2600mAh，续航应该能好不少。
+            <div class="comment-meta"><span>👍 41</span><span>8 小时前</span></div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="comment-avatar" style="background:#f2994a;">E</div>
+          <div class="comment-body">读者E：所以到底要不要从 X5 升级，钱包在滴血。
+            <div class="comment-meta"><span>👍 33</span><span>10 小时前</span></div>
+          </div>
+        </div>
+        <div class="item">
+          <div class="comment-avatar" style="background:#56ccf2;">F</div>
+          <div class="comment-body">读者F：十周年旗舰，诚意确实拉满了。
+            <div class="comment-meta"><span>👍 19</span><span>1 天前</span></div>
+          </div>
+        </div>
       </div>
     </main>
 
-    <aside class="fake-aside-right">
+    <div class="fake-aside-right">
       <div class="promo-banner-inline">📺 推荐视频广告位</div>
-      <div class="recommend-card">今日热榜 #1：AI 写作工具测评</div>
-      <div class="recommend-card">今日热榜 #2：远程办公效率指南</div>
-      <div class="recommend-card">今日热榜 #3：极简主义生活方式</div>
-    </aside>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#eb5757,#f2994a);"></div>
+        <div class="card-meta">今日热榜 #1：Insta360 X6 全网测评汇总 <span class="hot-tag">🔥 22万</span></div>
+      </div>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#56ccf2,#2f80ed);"></div>
+        <div class="card-meta">今日热榜 #2：全景相机怎么选？新手避坑指南 <span class="hot-tag">🔥 15万</span></div>
+      </div>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#6fcf97,#219653);"></div>
+        <div class="card-meta">今日热榜 #3：Vlog 博主实测 X6 vs 手机拍摄 <span class="hot-tag">🔥 11万</span></div>
+      </div>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#f2c94c,#f2994a);"></div>
+        <div class="card-meta">今日热榜 #4：影石十周年产品线全回顾 <span class="hot-tag">🔥 9.4万</span></div>
+      </div>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#bb6bd9,#9b51e0);"></div>
+        <div class="card-meta">今日热榜 #5：8K 视频剪辑软件推荐清单 <span class="hot-tag">🔥 7.1万</span></div>
+      </div>
+      <div class="recommend-card">
+        <div class="thumb-block" style="background: linear-gradient(135deg,#eb5757,#9b51e0);"></div>
+        <div class="card-meta">今日热榜 #6：运动相机选购终极指南 2026 <span class="hot-tag">🔥 5.8万</span></div>
+      </div>
+      <div class="app-download-ad">
+        📲 下载澎湃新闻 App<br />
+        <span style="font-size:12px;">第一时间获取科技新品资讯</span>
+        <div class="app-cta">立即下载</div>
+      </div>
+    </div>
 
     <footer class="fake-footer">
-      © 2026 FakeNews 日报 · 本页面仅用于演示，非真实新闻站点
+      <div class="footer-columns">
+        <div>
+          <h5>关于澎湃</h5>
+          <a href="#">关于我们</a><a href="#">加入我们</a><a href="#">联系我们</a>
+        </div>
+        <div>
+          <h5>合作</h5>
+          <a href="#">广告合作</a><a href="#">友情链接</a>
+        </div>
+        <div>
+          <h5>规范</h5>
+          <a href="#">法律声明</a><a href="#">隐私政策</a><a href="#">用户协议</a>
+        </div>
+        <div>
+          <h5>澎湃矩阵</h5>
+          <div class="footer-social"><span>微</span><span>博</span><span>信</span><span>抖</span></div>
+        </div>
+      </div>
+      <div class="footer-legal">
+        新闻报料：021-xxxxxxxx（示例号码，非真实联系方式）<br />
+        © 2026 澎湃新闻风格演示页 · 本页面为 INS_Reader 插件功能演示所用的模拟网页，与“澎湃新闻”及上海报业集团无关，仅供内部测试使用
+      </div>
     </footer>
+  </div>
+
+  <!-- ---- 浮夸弹窗广告 + 悬浮促销角标 + 底部订阅浮条，都是 body 的直接子节点（main.article 之外），
+       用来在“降噪前”的原始页面上制造典型内容站的视觉压迫感；开启阅读模式后阅读层
+       整屏覆盖，这些元素会被自然遮住，无需额外处理 ---- -->
+  <div class="modal-overlay popup-banner" id="signup-popup" style="display:none;">
+    <div class="popup-card">
+      <button class="popup-close" id="popup-close-btn">✕</button>
+      <div class="popup-title">🎁 Insta360 X6 首发预约礼</div>
+      <div class="popup-desc">现在预约登记，前 100 名可获赠官方自拍杆 + 快充套装，新品到货第一时间通知你！</div>
+      <button class="popup-cta">立即预约</button>
+    </div>
+  </div>
+  <div class="floating-promo-banner">🚀 X6 现货速抢<br /><span style="font-size:11px;opacity:0.85;">立减 $50，点击查看 »</span></div>
+  <div class="subscribe-bar" id="subscribe-bar" style="display:none;">
+    <span>📬 订阅澎湃新闻 · 科技频道，第一时间获取 Insta360 新品资讯与评测</span>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button class="subscribe-cta">立即订阅</button>
+      <button class="subscribe-close" id="subscribe-close-btn">✕</button>
+    </div>
   </div>
 
   <!-- ---- Mock chrome.* API，让 content.js 在无插件环境下也能运行 ---- -->
@@ -215,8 +485,8 @@
               href: location.href,
               origin: location.origin,
             });
-            if (msg?.type !== 'INS_READER_AI_SUMMARIZE') {
-              console.log('[INS_Reader][demo-mock] 非摘要消息，直接返回 null');
+            if (msg?.type !== 'INS_READER_AI_SUMMARIZE' && msg?.type !== 'INS_READER_AI_HIGHLIGHT') {
+              console.log('[INS_Reader][demo-mock] 非 AI 请求消息，直接返回 null');
               return null;
             }
             try {
@@ -279,8 +549,43 @@
     });
   </script>
 
+  <!-- ---- 顶部横幅倒计时 + 弹窗广告 + 订阅浮条的展示/关闭逻辑，纯 demo 装饰，不影响任何
+       INS_Reader 模块 ---- -->
+  <script>
+    (function () {
+      let remaining = 59 * 60 + 59;
+      const countdownEl = document.getElementById('banner-countdown');
+      setInterval(() => {
+        remaining = remaining > 0 ? remaining - 1 : 59 * 60 + 59;
+        const h = String(Math.floor(remaining / 3600)).padStart(2, '0');
+        const m = String(Math.floor((remaining % 3600) / 60)).padStart(2, '0');
+        const s = String(remaining % 60).padStart(2, '0');
+        countdownEl.textContent = `${h}:${m}:${s}`;
+      }, 1000);
+    })();
+
+    (function () {
+      const popup = document.getElementById('signup-popup');
+      setTimeout(() => { popup.style.display = 'flex'; }, 1500);
+      document.getElementById('popup-close-btn').addEventListener('click', () => {
+        popup.style.display = 'none';
+      });
+      popup.addEventListener('click', (e) => {
+        if (e.target === popup) popup.style.display = 'none';
+      });
+    })();
+
+    (function () {
+      const bar = document.getElementById('subscribe-bar');
+      setTimeout(() => { bar.style.display = 'flex'; }, 3200);
+      document.getElementById('subscribe-close-btn').addEventListener('click', () => {
+        bar.style.display = 'none';
+      });
+    })();
+  </script>
+
   <!-- ---- 用 canvas.captureStream() 现场生成一段会动的画面喂给 <video autoplay>，
-       不依赖任何外部视频资源，用来演示"暂停自动播放"/"屏蔽所有视频"两个降噪开关 ---- -->
+       不依赖任何外部视频资源，用来演示“暂停自动播放”/“屏蔽所有视频”两个降噪开关 ---- -->
   <script>
     (function () {
       const video = document.getElementById('demo-autoplay-video');
@@ -291,14 +596,14 @@
       let t = 0;
       setInterval(() => {
         t += 1;
-        ctx.fillStyle = '#101512';
+        ctx.fillStyle = '#141414';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         const x = 60 + (Math.sin(t / 20) * 0.5 + 0.5) * (canvas.width - 120);
-        ctx.fillStyle = '#83cfc0';
+        ctx.fillStyle = '#e2493a';
         ctx.beginPath();
         ctx.arc(x, canvas.height / 2, 24, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#5a6a64';
+        ctx.fillStyle = '#999999';
         ctx.font = '12px sans-serif';
         ctx.fillText('DEMO AUTOPLAY VIDEO', 14, 22);
       }, 1000 / 30);

@@ -2,12 +2,14 @@
 // INS_Reader · background service worker
 // 图标点击由 popup.html 处理（default_popup 优先级高于 onClicked）。
 //
-// 承担 AI 摘要的实际网络请求：content script 里的 fetch 会受宿主页面的 CSP
+// 承担 AI 摘要/高亮的实际网络请求：content script 里的 fetch 会受宿主页面的 CSP
 // （如 connect-src 白名单）约束，很多站点会因此直接拦截插件对 localhost:8000
 // 的请求；service worker 是独立执行上下文，不受宿主页面 CSP 影响，所以把请求
 // 转发到这里执行。
-// 调用者：仅 ai-client.js 通过 chrome.runtime.sendMessage({ type: 'INS_READER_AI_SUMMARIZE' })
-// 委托请求；本文件转发到 backend/routers/ai.py 的 POST /v1/ai/summarize，
+// 调用者：ai-client.js 通过 chrome.runtime.sendMessage 发送
+// { type: 'INS_READER_AI_SUMMARIZE' }（生成摘要）或 { type: 'INS_READER_AI_HIGHLIGHT' }
+// （应用高亮）委托请求；两者的 payload 形状相同（device_id/text/mode/...），
+// 都原样转发到 backend/routers/ai.py 的 POST /v1/ai/summarize（由 payload.mode 区分），
 // 结果通过 sendResponse 回传给 ai-client.js。
 
 const AI_API_BASE = 'http://localhost:8000';
@@ -75,10 +77,11 @@ async function INS_handleSummarize(payload) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type !== 'INS_READER_AI_SUMMARIZE') {
+  if (msg?.type !== 'INS_READER_AI_SUMMARIZE' && msg?.type !== 'INS_READER_AI_HIGHLIGHT') {
     return;
   }
-  console.log('[INS_Reader][background] onMessage 收到摘要消息', {
+  console.log('[INS_Reader][background] onMessage 收到 AI 请求消息', {
+    messageType: msg.type,
     runtimeId: chrome.runtime.id,
     senderUrl: sender && (sender.tab ? sender.tab.url : sender.url),
     senderId: sender && sender.id,

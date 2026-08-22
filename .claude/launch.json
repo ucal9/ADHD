@@ -1,0 +1,47 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "demo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8080"],
+      "port": 8080
+    },
+    {
+      "name": "demo-verify",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8082"],
+      "port": 8082
+    },
+    {
+      "name": "demo-typo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8083"],
+      "port": 8083
+    },
+    {
+      "name": "demo-ai",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8084"],
+      "port": 8084
+    },
+    {
+      "name": "demo-preset",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8085"],
+      "port": 8085
+    },
+    {
+      "name": "demo-noise",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8086"],
+      "port": 8086
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "backend/venv/bin/uvicorn",
+      "runtimeArgs": ["main:app", "--host", "127.0.0.1", "--port", "8000", "--app-dir", "backend"],
+      "port": 8000
+    }
+  ]
+}

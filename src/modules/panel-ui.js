@@ -1,12 +1,15 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 设置面板模块
 // 职责：渲染用户设置面板，Shadow DOM 隔离样式。面板分两级：
-// 一级入口界面只展示 Logo/Slogan、降噪总开关、AI 内容助手总开关、我的预设 与【详细配置】入口；
-// 点【详细配置】后展开二级面板（主题、排版、预设管理、动态降噪细分开关、AI 二级细分开关）。
+// 一级入口界面只展示 Logo/Slogan、一键降噪（阅读模式总开关，关闭即恢复原网页）与
+// 【我的预设】入口（沿用原"详细配置"按钮的展开逻辑，AI 内容助手总开关也一并挪入其中）；
+// 点【我的预设】后展开二级面板（主题、排版、预设管理、动态降噪细分开关、AI 二级细分开关）。
 // 依赖 INS_Reader.prefsStore / readerLayer / aiClient / pageMeta / appController。
 // 面板自身不决定"是否应用"，只负责收集用户输入后回调 INS_Reader.appController
 // 提供的 applyAll/restoreOriginalPage；点击"生成摘要"时直接调用 aiClient.summarize()，
-// 成功后把结果写入 readerLayer.setSummary() 再重新渲染。当前页面被判定不适合阅读模式时
+// 成功后把结果写入 readerLayer.setSummary() 再重新渲染；点击"应用高亮"时调用
+// aiClient.highlight()（把三个子开关状态传给后端），成功后把返回的正文 HTML 写入
+// readerLayer.setHighlightHtml() 再重新渲染。当前页面被判定不适合阅读模式时
 // （readerLayer.getLastFeasibilityReason() 非空），改为展示"生成内容概览"入口：用
 // pageMeta.extract() 抓取标题/描述文本，同样交给 aiClient.summarize() 生成概览，
 // 结果只存在面板本地状态（不写入 prefsStore/readerLayer，关闭面板即丢弃）。
@@ -90,7 +93,10 @@ window.INS_Reader = window.INS_Reader || {};
     pageOverviewText: '',
     pageOverviewStatus: '',
     pageOverviewError: '',
-    expandedMenus: {}, // 保存各菜单的展开状态
+    expandedGroups: { typography: false, noise: false, ai: false }, // 二级配置里"排版/降噪/
+    // AI 内容助手"三个栏目各自独立展开/收起自己的设置内容，可以同时展开多个，不是手风琴互斥、
+    // 也不是整页替换/跳转。
+    savePresetDialogOpen: false, // 面板内自定义的"保存预设"命名弹层是否展示
   };
 
   function INS_ensurePanelHost() {
@@ -149,24 +155,18 @@ window.INS_Reader = window.INS_Reader || {};
     style.textContent = PANEL_CSS;
     shadow.appendChild(style);
 
+    // 动态降噪模块暴露这 4 项开关，其余降噪选择器（广告推荐/会员登录推销）
+    // 仍在 noiseFilter 里按默认值生效，只是不再作为用户可调的开关出现在这个模块里。
+    // "视频（暂停播放并隐藏）"是一个开关同时驱动两个动作：暂停原页面自动播放 + 从
+    // 阅读层克隆体里摘掉视频容器，两者始终同开同关，不再拆成两个独立开关。
     const noiseLabels = {
-      ads: '广告推荐',
-      sidebar: '侧边栏/导航',
-      comments: '评论区',
-      banners: '弹窗/横幅',
-      marketing: '会员/登录推销',
-      pauseAutoplay: '视频动画（暂停自动播放）',
-      blockAllVideos: '屏蔽所有视频',
+      sidebar: '隐藏侧边栏',
+      comments: '隐藏评论区',
+      banners: '隐藏弹窗横幅',
+      video: '视频（暂停播放并隐藏）',
     };
 
-    // 需要额外风险提示的降噪项
-    const noiseNotes = {
-      blockAllVideos: '可能存在风险',
-    };
-
-    // 降噪开关的展示顺序：选择器类别（来自 NOISE_GROUPS）之外，还有 pauseAutoplay
-    // 这个作用于原页面播放状态的特殊项，因此这里显式列出顺序而不是遍历 NOISE_GROUPS。
-    const noiseOrder = ['ads', 'sidebar', 'comments', 'banners', 'marketing', 'pauseAutoplay', 'blockAllVideos'];
+    const noiseOrder = ['sidebar', 'comments', 'banners', 'video'];
 
     const feasibilityReason = readerLayer.getLastFeasibilityReason();
     const feasibilityMessages = {
@@ -179,20 +179,18 @@ window.INS_Reader = window.INS_Reader || {};
     panel.className = isFirstOpen ? 'ins-reader-panel opening' : 'ins-reader-panel';
     panel.classList.toggle('expanded', state.isExpanded);
 
-    let panelHTML = `
-      <div class="panel-top">
-        ${
-          state.isExpanded
-            ? '<button class="back-btn" data-role="collapse-btn" aria-label="返回">‹ 返回</button>'
-            : ''
-        }
-        <div class="brand">INS_Reader</div>
-        <button class="close-btn" data-role="close" aria-label="关闭">×</button>
-      </div>
-      <p class="tagline">把阅读调成适合你的样子</p>
-    `;
+    let panelHTML = '';
 
     if (state.isExpanded) {
+      // 二级详细配置：保留【‹ 返回】与【×】关闭，一级简易视图的开关不出现在这里。
+      panelHTML += `
+        <div class="panel-top">
+          <button class="back-btn" data-role="collapse-btn" aria-label="返回">‹ 返回</button>
+          <div class="brand">缓读</div>
+          <button class="close-btn" data-role="close" aria-label="关闭">×</button>
+        </div>
+        <p class="tagline">把阅读调成适合你的样子</p>
+      `;
       panelHTML += `
         ${
           feasibilityReason
@@ -223,65 +221,153 @@ window.INS_Reader = window.INS_Reader || {};
             : ''
         }
 
-        <div class="expandable-group" data-group="typography">
-          <button class="group-header" data-role="typography-toggle">
+        <div class="nav-row ${state.expandedGroups.typography ? 'open' : ''}">
+          <button class="nav-row-main" data-role="group-open-typography">
             <span class="group-label">排版</span>
-            <span class="group-icon">▼</span>
+            <span class="nav-chevron">›</span>
           </button>
-          <div class="group-content ${state.expandedMenus.typography ? 'expanded' : ''}" data-role="typography-menu">
-            <div class="setting">
-              <span>页面底色</span>
-              <div class="bg-swatches">
-                ${BG_SWATCHES.map(
-                  (s) =>
-                    `<button class="bg-swatch ${
-                      prefs.customColors.bg.toLowerCase() === s.bg ? 'active' : ''
-                    }" data-swatch-bg="${s.bg}" data-swatch-text="${s.text}" title="${s.label}" aria-label="${s.label}" style="background:${s.bg}"></button>`
-                ).join('')}
-              </div>
-            </div>
-
-            <div class="custom-colors">
-              <label>背景 <input type="color" data-role="custom-bg" value="${prefs.customColors.bg}" /></label>
-              <label>文字 <input type="color" data-role="custom-text" value="${prefs.customColors.text}" /></label>
-            </div>
-
-            ${STEPPERS.map(
-              (s) => `
-            <div class="setting row">
-              <span>${s.label}</span>
-              <div class="stepper">
-                <button data-step-key="${s.key}" data-step-dir="-1" ${
-                prefs[s.key] <= s.min ? 'disabled' : ''
-              } aria-label="减小${s.label}">−</button>
-                <b class="step-value">${prefs[s.key].toFixed(s.digits)}${s.suffix}</b>
-                <button data-step-key="${s.key}" data-step-dir="1" ${
-                prefs[s.key] >= s.max ? 'disabled' : ''
-              } aria-label="增大${s.label}">＋</button>
-              </div>
-            </div>`
-            ).join('')}
-
-            <div class="setting">
-              <span>字体</span>
-              <div class="font-options">
-                ${Object.entries(FONT_FAMILIES)
-                  .map(
-                    ([key, label]) =>
-                      `<button data-font="${key}" class="font-btn ${prefs.fontFamily === key ? 'active' : ''}">${label}</button>`
-                  )
-                  .join('')}
-              </div>
-            </div>
-
-            <button class="save-preset" data-role="save-preset">💾 保存预设</button>
-          </div>
+          <button class="switch small group-master-switch ${prefs.typographyEnabled ? 'on' : ''}" data-role="typography-master-switch" aria-label="排版总开关"><span></span></button>
         </div>
-
         ${
-          prefs.presets && prefs.presets.length > 0
-            ? `<div class="presets-section">
-                <div class="presets-header">我的预设</div>
+          state.expandedGroups.typography
+            ? `
+        <div class="group-content">
+          ${
+            !prefs.typographyEnabled
+              ? '<p class="ai-hint">排版总开关已关闭，阅读层使用系统默认外观；开启后可自定义字号/字体/颜色等。</p>'
+              : `
+          <div class="setting">
+            <span>页面底色</span>
+            <div class="bg-swatches">
+              ${BG_SWATCHES.map(
+                (s) =>
+                  `<button class="bg-swatch ${
+                    prefs.customColors.bg.toLowerCase() === s.bg ? 'active' : ''
+                  }" data-swatch-bg="${s.bg}" data-swatch-text="${s.text}" title="${s.label}" aria-label="${s.label}" style="background:${s.bg}"></button>`
+              ).join('')}
+            </div>
+          </div>
+
+          <div class="custom-colors">
+            <label>背景 <input type="color" data-role="custom-bg" value="${prefs.customColors.bg}" /></label>
+            <label>文字 <input type="color" data-role="custom-text" value="${prefs.customColors.text}" /></label>
+          </div>
+
+          ${STEPPERS.map(
+            (s) => `
+          <div class="setting row">
+            <span>${s.label}</span>
+            <div class="stepper">
+              <button data-step-key="${s.key}" data-step-dir="-1" ${
+              prefs[s.key] <= s.min ? 'disabled' : ''
+            } aria-label="减小${s.label}">−</button>
+              <span class="step-value-wrap">
+                <input type="number" class="step-value-input" data-step-input="${s.key}" inputmode="decimal"
+                  step="${s.step}" min="${s.min}" max="${s.max}" value="${prefs[s.key].toFixed(s.digits)}"
+                  aria-label="${s.label}数值" />${s.suffix ? `<span class="step-suffix">${s.suffix}</span>` : ''}
+              </span>
+              <button data-step-key="${s.key}" data-step-dir="1" ${
+              prefs[s.key] >= s.max ? 'disabled' : ''
+            } aria-label="增大${s.label}">＋</button>
+            </div>
+          </div>`
+          ).join('')}
+
+          <div class="setting">
+            <span>字体</span>
+            <div class="font-options">
+              ${Object.entries(FONT_FAMILIES)
+                .map(
+                  ([key, label]) =>
+                    `<button data-font="${key}" class="font-btn ${prefs.fontFamily === key ? 'active' : ''}">${label}</button>`
+                )
+                .join('')}
+            </div>
+          </div>`
+          }
+        </div>`
+            : ''
+        }
+
+        <div class="nav-row ${state.expandedGroups.noise ? 'open' : ''}">
+          <button class="nav-row-main" data-role="group-open-noise">
+            <span class="group-label">降噪</span>
+            <span class="nav-chevron">›</span>
+          </button>
+          <button class="switch small group-master-switch ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="降噪总开关"><span></span></button>
+        </div>
+        ${
+          state.expandedGroups.noise
+            ? `
+        <div class="group-content">
+          ${noiseOrder
+            .map(
+              (key) => `
+          <div class="noise-row">
+            <span>${noiseLabels[key]}</span>
+            <button class="switch small ${prefs.noiseOptions[key] ? 'on' : ''}" data-noise-key="${key}"><span></span></button>
+          </div>`
+            )
+            .join('')}
+          <p class="noise-reset-hint">关闭此开关会直接退出阅读视图并显示原网页；排版与 AI 设置不受影响，重新开启后自动恢复。</p>
+          <p class="noise-risk-disclaimer">"视频（暂停播放并隐藏）"可能影响页面正常播放或功能，请谨慎开启</p>
+          <p class="noise-reset-hint">降噪只作用于阅读层的克隆内容，关闭对应开关即可立即恢复，无需刷新页面。</p>
+          <p class="noise-feedback">本页已隐藏 <b data-role="noise-count">${readerLayer.getHiddenCount()}</b> 个干扰元素</p>
+        </div>`
+            : ''
+        }
+
+        <div class="nav-row ${state.expandedGroups.ai ? 'open' : ''}">
+          <button class="nav-row-main" data-role="group-open-ai">
+            <span class="group-label">AI 内容助手</span>
+            <span class="nav-chevron">›</span>
+          </button>
+          <button class="switch small group-master-switch ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手总开关"><span></span></button>
+        </div>
+        ${
+          state.expandedGroups.ai
+            ? `
+        <div class="group-content">
+          ${
+            !prefs.aiEnabled
+              ? '<p class="ai-hint">AI 内容助手总开关已关闭，开启后可在此配置摘要与高亮。</p>'
+              : `
+          <div class="ai-row">
+            <span>AI 摘要</span>
+            <button class="switch small ${prefs.aiSummary ? 'on' : ''}" data-role="ai-summary-switch" aria-label="AI 摘要开关"><span></span></button>
+          </div>
+          <div class="ai-row">
+            <span>拆分长段落</span>
+            <button class="switch small ${prefs.aiHighlight.breakLongParagraphs ? 'on' : ''}" data-highlight-key="breakLongParagraphs" aria-label="拆分长段落开关"><span></span></button>
+          </div>
+          <div class="ai-row">
+            <span>简化复杂长句</span>
+            <button class="switch small ${prefs.aiHighlight.simplifySentences ? 'on' : ''}" data-highlight-key="simplifySentences" aria-label="简化复杂长句开关"><span></span></button>
+          </div>
+          <div class="ai-row">
+            <span>标记核心信息</span>
+            <button class="switch small ${prefs.aiHighlight.markKeyInfo ? 'on' : ''}" data-highlight-key="markKeyInfo" aria-label="标记核心信息开关"><span></span></button>
+          </div>
+          <div class="setting row">
+            <span>内容版本</span>
+            <div class="font-options">
+              <button class="font-btn ${readerLayer.getContentVersion() === 'original' ? 'active' : ''}" data-role="content-version-original">原文</button>
+              <button class="font-btn ${readerLayer.getContentVersion() === 'digest' ? 'active' : ''}" data-role="content-version-digest">缓读版</button>
+            </div>
+          </div>
+          <p class="ai-hint">正文将发送到 INS_Reader 后端处理，不会用于其他用途。</p>
+          <div class="ai-progress" data-role="ai-content-progress" hidden><div class="ai-progress-bar"></div></div>
+          <p class="ai-status" data-role="ai-content-status"></p>`
+          }
+        </div>`
+            : ''
+        }
+
+        <div class="presets-section">
+          <button class="save-preset" data-role="save-preset">+ 保存当前配置为预设</button>
+          ${
+            prefs.presets && prefs.presets.length > 0
+              ? `<div class="presets-header">我的预设</div>
                 <div class="presets-list">
                   ${prefs.presets
                     .map(
@@ -292,115 +378,41 @@ window.INS_Reader = window.INS_Reader || {};
                     </div>`
                     )
                     .join('')}
+                </div>`
+              : ''
+          }
+        </div>
+
+        <button class="restore" data-role="restore">恢复原网页</button>
+
+        ${
+          state.savePresetDialogOpen
+            ? `<div class="dialog-overlay" data-role="preset-dialog-overlay">
+                <div class="dialog-card">
+                  <p class="dialog-title">保存预设</p>
+                  <input type="text" class="dialog-input" data-role="preset-name-input" placeholder="请输入预设名称" maxlength="20" autofocus />
+                  <p class="dialog-error" data-role="preset-name-error" hidden></p>
+                  <div class="dialog-actions">
+                    <button class="dialog-btn dialog-btn-cancel" data-role="preset-name-cancel">取消</button>
+                    <button class="dialog-btn dialog-btn-confirm" data-role="preset-name-confirm">确定</button>
+                  </div>
                 </div>
               </div>`
             : ''
         }
-
-        <div class="expandable-group" data-group="noise">
-          <button class="group-header" data-role="noise-toggle">
-            <span class="group-label">降噪</span>
-            <span class="group-icon">▼</span>
-          </button>
-          <div class="group-content ${state.expandedMenus.noise ? 'expanded' : ''}" data-role="noise-menu">
-            ${noiseOrder
-              .map(
-                (key) => `
-              <div class="noise-row">
-                <span>${noiseLabels[key]}${
-                  noiseNotes[key] ? `<em class="noise-note">${noiseNotes[key]}</em>` : ''
-                }</span>
-                <button class="switch small ${prefs.noiseOptions[key] ? 'on' : ''}" data-noise-key="${key}"><span></span></button>
-              </div>`
-              )
-              .join('')}
-            <p class="noise-feedback">本页已隐藏 <b data-role="noise-count">${readerLayer.getHiddenCount()}</b> 个干扰元素</p>
-          </div>
-        </div>
-
-        <div class="expandable-group" data-group="ai">
-          <button class="group-header" data-role="ai-toggle">
-            <span class="group-label">AI 内容助手</span>
-            <span class="group-icon">▼</span>
-          </button>
-          <div class="group-content ${state.expandedMenus.ai ? 'expanded' : ''}" data-role="ai-menu">
-            ${
-              prefs.aiEnabled
-                ? `
-              <div class="ai-row">
-                <span>AI 摘要</span>
-                <button class="switch small ${prefs.aiSummary ? 'on' : ''}" data-role="ai-summary-switch"><span></span></button>
-              </div>
-
-              ${
-                prefs.aiSummary
-                  ? `
-                <p class="ai-hint">正文将发送到 INS_Reader 后端生成摘要，不会用于其他用途。</p>
-                <button class="ai-generate" data-role="ai-generate">${
-                  readerLayer.getSummary() ? '重新生成摘要' : '生成摘要'
-                }</button>
-                <div class="ai-progress" data-role="ai-progress" hidden><div class="ai-progress-bar"></div></div>
-                <p class="ai-status" data-role="ai-status"></p>`
-                  : ''
-              }
-
-              <div class="ai-row">
-                <span>高亮</span>
-                <button class="switch small ${prefs.aiHighlight?.enabled ? 'on' : ''}" data-role="ai-highlight-switch"><span></span></button>
-              </div>
-
-              ${
-                prefs.aiHighlight?.enabled
-                  ? `
-                <div class="ai-highlight-section">
-                  <div class="ai-highlight-header">内容</div>
-                  <div class="highlight-option">
-                    <label>
-                      <input type="checkbox" data-highlight-key="breakLongParagraphs" ${
-                        prefs.aiHighlight.breakLongParagraphs ? 'checked' : ''
-                      } />
-                      拆分长段落
-                    </label>
-                  </div>
-                  <div class="highlight-option">
-                    <label>
-                      <input type="checkbox" data-highlight-key="simplifySentences" ${
-                        prefs.aiHighlight.simplifySentences ? 'checked' : ''
-                      } />
-                      简化复杂长句
-                    </label>
-                  </div>
-                  <div class="highlight-option">
-                    <label>
-                      <input type="checkbox" data-highlight-key="markKeyInfo" ${
-                        prefs.aiHighlight.markKeyInfo ? 'checked' : ''
-                      } />
-                      标记核心信息
-                    </label>
-                  </div>
-                </div>`
-                  : ''
-              }
-            `
-                : '<p class="ai-hint">AI 内容助手总开关在入口界面，开启后可在此配置摘要与高亮。</p>'
-            }
-          </div>
-        </div>
-
-        <button class="restore" data-role="restore">恢复原网页</button>
       `;
     } else {
+      // 一级简易视图：不展示【‹ 返回】/【×】，图标+标题+一键降噪开关合并在同一行，
+      // 底部改为分割线 + 右对齐的【详细配置 ›】文字链接（原来的"我的预设"按钮文案
+      // 与上方预设列表标题重名混淆，按设计稿改名并改成 nav-link 样式）。
       panelHTML += `
         <div class="simple-mode">
-          <div class="simple-row">
-            <span>降噪</span>
-            <button class="switch ${prefs.noiseReduction ? 'on' : ''}" data-role="simple-noise-toggle"><span></span></button>
+          <div class="simple-header">
+            <span class="brand-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="simple-title">缓读</span>
+            <button class="switch ${prefs.enabled ? 'on' : ''}" data-role="simple-noise-toggle" aria-label="一键降噪"><span></span></button>
           </div>
-
-          <div class="simple-row">
-            <span>AI 内容助手</span>
-            <button class="switch ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch"><span></span></button>
-          </div>
+          <p class="tagline">把阅读调成适合你的样子</p>
 
           ${
             prefs.presets && prefs.presets.length > 0
@@ -416,7 +428,8 @@ window.INS_Reader = window.INS_Reader || {};
               : ''
           }
 
-          <button class="expand-btn" data-role="expand-btn">详细配置</button>
+          <hr class="simple-divider" />
+          <button class="detail-link" data-role="expand-btn">详细配置<span class="chevron">›</span></button>
         </div>
       `;
     }
@@ -431,7 +444,9 @@ window.INS_Reader = window.INS_Reader || {};
     if (overviewErrorEl) overviewErrorEl.textContent = state.pageOverviewError || '生成失败';
 
     // ===== 事件绑定 =====
-    panel.querySelector('[data-role="close"]').addEventListener('click', () => INS_close(panel));
+    // 一级简易视图没有独立的关闭按钮（改为图标+标题+开关合并一行），只有二级详细配置才有。
+    const closeBtn = panel.querySelector('[data-role="close"]');
+    if (closeBtn) closeBtn.addEventListener('click', () => INS_close(panel));
 
     // 展开/收起详细配置
     const expandBtn = panel.querySelector('[data-role="expand-btn"]');
@@ -447,6 +462,7 @@ window.INS_Reader = window.INS_Reader || {};
     if (collapseBtn) {
       collapseBtn.addEventListener('click', () => {
         state.isExpanded = false;
+        state.expandedGroups = { typography: false, noise: false, ai: false };
         INS_render();
       });
     }
@@ -523,6 +539,27 @@ window.INS_Reader = window.INS_Reader || {};
       });
     });
 
+    // 四个数值型排版项的直接输入框：与 +/- 步进器共用同一批 STEPPERS 配置，
+    // 失焦或按 Enter 时提交（而非每次按键都提交），避免输入过程中被重渲染打断。
+    panel.querySelectorAll('[data-step-input]').forEach((input) => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+      });
+      input.addEventListener('change', () => {
+        const key = input.getAttribute('data-step-input');
+        const conf = STEPPERS.find((s) => s.key === key);
+        if (!conf) return;
+        const parsed = parseFloat(input.value);
+        prefs[key] = Number.isFinite(parsed)
+          ? INS_roundTo(Math.min(conf.max, Math.max(conf.min, parsed)), conf.digits)
+          : prefs[key];
+        prefs.enabled = true;
+        prefsStore.save();
+        appController.applyAll();
+        INS_render();
+      });
+    });
+
     // 字体选择
     panel.querySelectorAll('[data-font]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -534,171 +571,245 @@ window.INS_Reader = window.INS_Reader || {};
       });
     });
 
-    // 排版菜单展开/收起
-    const typographyToggle = panel.querySelector('[data-role="typography-toggle"]');
-    const typographyMenu = panel.querySelector('[data-role="typography-menu"]');
-    if (typographyToggle && typographyMenu) {
-      typographyToggle.addEventListener('click', (e) => {
+    // 二级栏目导航：点击"排版"/"降噪"/"AI 内容助手"标题行原地展开/收起该栏目的设置内容——
+    // 每个栏目独立维护自己的展开状态，可以同时展开多个，互不影响。
+    const groupOpenButtons = {
+      typography: panel.querySelector('[data-role="group-open-typography"]'),
+      noise: panel.querySelector('[data-role="group-open-noise"]'),
+      ai: panel.querySelector('[data-role="group-open-ai"]'),
+    };
+    Object.entries(groupOpenButtons).forEach(([group, btn]) => {
+      if (!btn) return;
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        state.expandedMenus.typography = !state.expandedMenus.typography;
-        typographyMenu.classList.toggle('expanded');
+        state.expandedGroups[group] = !state.expandedGroups[group];
+        INS_render();
       });
-    }
+    });
 
-    // 降噪菜单展开/收起 - 注意这里只控制展开/收起，不同时改变 noiseReduction 状态
-    const noiseToggle = panel.querySelector('[data-role="noise-toggle"]');
-    const noiseMenu = panel.querySelector('[data-role="noise-menu"]');
-    if (noiseToggle && noiseMenu) {
-      noiseToggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        state.expandedMenus.noise = !state.expandedMenus.noise;
-        noiseMenu.classList.toggle('expanded');
-      });
-    }
-
-    // AI 菜单展开/收起
-    const aiToggle = panel.querySelector('[data-role="ai-toggle"]');
-    const aiMenu = panel.querySelector('[data-role="ai-menu"]');
-    if (aiToggle && aiMenu) {
-      aiToggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        state.expandedMenus.ai = !state.expandedMenus.ai;
-        aiMenu.classList.toggle('expanded');
-      });
-    }
-
-    // AI 内容助手模块总开关（位于一级入口界面）
+    // AI 内容助手模块总开关（位于"AI 内容助手"栏目标题行右侧）
     const aiMasterSwitch = panel.querySelector('[data-role="ai-master-switch"]');
     if (aiMasterSwitch) {
-      aiMasterSwitch.addEventListener('click', () => {
+      aiMasterSwitch.addEventListener('click', (e) => {
+        e.stopPropagation();
         prefs.aiEnabled = !prefs.aiEnabled;
+        prefs.enabled = true;
         prefsStore.save();
+        appController.applyAll();
         INS_render();
       });
     }
 
-    // 二级细分开关：AI 摘要
+    // 排版模块总开关（位于"排版"栏目标题行右侧，与展开/收起互不影响）
+    const typographyMasterSwitch = panel.querySelector('[data-role="typography-master-switch"]');
+    if (typographyMasterSwitch) {
+      typographyMasterSwitch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        prefs.typographyEnabled = !prefs.typographyEnabled;
+        prefs.enabled = true;
+        prefsStore.save();
+        appController.applyAll();
+        INS_render();
+      });
+    }
+
+    // 降噪模块总开关（位于"降噪"栏目标题行右侧，与展开/收起互不影响）
+    const noiseMasterSwitch = panel.querySelector('[data-role="noise-master-switch"]');
+    if (noiseMasterSwitch) {
+      noiseMasterSwitch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        prefs.noiseReduction = !prefs.noiseReduction;
+        prefs.enabled = true;
+        prefsStore.save();
+        appController.applyAll();
+        INS_render();
+      });
+    }
+
+    // AI 摘要开关（AI 内容助手详情页里的平级开关，与拆分长段落/简化复杂长句/标记核心信息同级）
     const aiSummarySwitch = panel.querySelector('[data-role="ai-summary-switch"]');
     if (aiSummarySwitch) {
       aiSummarySwitch.addEventListener('click', (e) => {
         e.stopPropagation();
         prefs.aiSummary = !prefs.aiSummary;
+        prefs.enabled = true;
         prefsStore.save();
-        // 展开状态存在 state.expandedMenus 里，重渲染后会被还原，因此这里可以安全重渲染
+        appController.applyAll();
         INS_render();
       });
     }
 
-    // 二级细分开关：高亮
-    const aiHighlightSwitch = panel.querySelector('[data-role="ai-highlight-switch"]');
-    if (aiHighlightSwitch) {
-      aiHighlightSwitch.addEventListener('click', (e) => {
+    // 拆分长段落/简化复杂长句/标记核心信息：三个开关平级展示，不再有独立的"高亮"总开关——
+    // aiHighlight.enabled 由三者中任意一项开启即自动置真，供 reader-layer.js 判断是否展示高亮结果。
+    panel.querySelectorAll('[data-highlight-key]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        prefs.aiHighlight.enabled = !prefs.aiHighlight.enabled;
+        const key = btn.getAttribute('data-highlight-key');
+        prefs.aiHighlight[key] = !prefs.aiHighlight[key];
+        prefs.aiHighlight.enabled =
+          prefs.aiHighlight.breakLongParagraphs ||
+          prefs.aiHighlight.simplifySentences ||
+          prefs.aiHighlight.markKeyInfo;
+        prefs.enabled = true;
         prefsStore.save();
+        appController.applyAll();
         INS_render();
-      });
-    }
-
-    // AI 高亮子功能复选框
-    panel.querySelectorAll('[data-highlight-key]').forEach((checkbox) => {
-      checkbox.addEventListener('change', () => {
-        const key = checkbox.getAttribute('data-highlight-key');
-        prefs.aiHighlight[key] = checkbox.checked;
-        prefsStore.save();
       });
     });
 
-    // 生成摘要按钮
-    const statusEl = panel.querySelector('[data-role="ai-status"]');
-    const generateBtn = panel.querySelector('[data-role="ai-generate"]');
-    const progressEl = panel.querySelector('[data-role="ai-progress"]');
-    if (generateBtn) {
-      generateBtn.addEventListener('click', async () => {
-        const startedAt = performance.now();
+    // 内容版本切换（原文 / 缓读版）：切到缓读版时按需生成（已缓存则直接展示），切回原文不触发生成
+    const contentStatusEl = panel.querySelector('[data-role="ai-content-status"]');
+    const contentProgressEl = panel.querySelector('[data-role="ai-content-progress"]');
+    const contentVersionOriginalBtn = panel.querySelector('[data-role="content-version-original"]');
+    const contentVersionDigestBtn = panel.querySelector('[data-role="content-version-digest"]');
+
+    if (contentVersionOriginalBtn) {
+      contentVersionOriginalBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        readerLayer.setContentVersion('original');
+        prefs.enabled = true;
+        prefsStore.save();
+        appController.applyAll();
+        INS_render();
+      });
+    }
+
+    if (contentVersionDigestBtn) {
+      contentVersionDigestBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const { aiClient } = window.INS_Reader;
-        const articleText = readerLayer.getArticleText();
-        console.log('[INS_Reader][panel-ui] 用户点击生成摘要', {
-          textLength: articleText ? articleText.length : 0,
-          href: location.href,
-          origin: location.origin,
-        });
-        if (!articleText) {
-          console.warn('[INS_Reader][panel-ui] 未找到正文内容，终止生成');
-          if (statusEl) statusEl.textContent = '未找到正文内容';
+        const needSummary = prefs.aiSummary && !readerLayer.getSummary();
+        const needHighlight = prefs.aiHighlight.enabled && !readerLayer.getHighlightHtml();
+
+        if (!needSummary && !needHighlight) {
+          readerLayer.setContentVersion('digest');
+          prefs.enabled = true;
+          prefsStore.save();
+          appController.applyAll();
+          INS_render();
           return;
         }
-        generateBtn.disabled = true;
-        if (progressEl) progressEl.hidden = false;
-        if (statusEl) statusEl.classList.remove('error');
 
-        const stages = ['正在读取正文…', '正在分析内容…', '正在生成摘要…'];
-        let stageIndex = 0;
-        if (statusEl) statusEl.textContent = stages[0];
-        console.log('[INS_Reader][panel-ui] 进入生成流程，阶段文案:', stages[0]);
-        const stageTimer = setInterval(() => {
-          stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-          if (statusEl) statusEl.textContent = stages[stageIndex];
-        }, 3000);
+        const articleText = readerLayer.getArticleText();
+        if (!articleText) {
+          if (contentStatusEl) {
+            contentStatusEl.classList.add('error');
+            contentStatusEl.textContent = '未找到正文内容';
+          }
+          return;
+        }
+
+        contentVersionDigestBtn.disabled = true;
+        if (contentProgressEl) contentProgressEl.hidden = false;
+        if (contentStatusEl) {
+          contentStatusEl.classList.remove('error');
+          contentStatusEl.textContent = '正在生成缓读版…';
+        }
 
         try {
-          console.log('[INS_Reader][panel-ui] 准备调用 aiClient.summarize');
-          const summary = await aiClient.summarize(articleText);
-          console.log('[INS_Reader][panel-ui] aiClient.summarize 返回成功', {
-            elapsed: `${Math.round(performance.now() - startedAt)}ms`,
-            resultLength: summary ? summary.length : 0,
-          });
-          readerLayer.setSummary(summary);
+          // 依次串行请求，不用 Promise.all 并发——内网 LLM 网关对同一客户端的并发连接不稳定，
+          // 并发发两路请求时曾出现其中一路 ConnectError（All connection attempts failed）。
+          if (needSummary) {
+            const summary = await aiClient.summarize(articleText);
+            readerLayer.setSummary(summary);
+          }
+          if (needHighlight) {
+            const options = {
+              break_long_paragraphs: !!prefs.aiHighlight.breakLongParagraphs,
+              simplify_sentences: !!prefs.aiHighlight.simplifySentences,
+              mark_key_info: !!prefs.aiHighlight.markKeyInfo,
+            };
+            const html = await aiClient.highlight(articleText, options);
+            readerLayer.setHighlightHtml(html);
+          }
+          readerLayer.setContentVersion('digest');
           prefs.enabled = true;
+          prefsStore.save();
           appController.applyAll();
           INS_render();
         } catch (err) {
-          console.error('[INS_Reader][panel-ui] aiClient.summarize 返回失败', {
-            elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+          console.error('[INS_Reader][panel-ui] 生成缓读版失败', {
             name: err && err.name,
             message: err && err.message,
             stack: err && err.stack,
           });
-          if (statusEl) {
-            statusEl.classList.add('error');
-            statusEl.textContent = err.message || 'AI 摘要生成失败';
+          if (contentStatusEl) {
+            contentStatusEl.classList.add('error');
+            contentStatusEl.textContent = err.message || '生成缓读版失败';
           }
-          generateBtn.disabled = false;
-          if (progressEl) progressEl.hidden = true;
-        } finally {
-          clearInterval(stageTimer);
+          contentVersionDigestBtn.disabled = false;
+          if (contentProgressEl) contentProgressEl.hidden = true;
         }
       });
     }
 
-    // 保存预设
+    // 保存预设：点击按钮先做数量上限检查，通过后打开面板内自定义命名弹层（取代原生 prompt()）
     const savePresetBtn = panel.querySelector('[data-role="save-preset"]');
     if (savePresetBtn) {
       savePresetBtn.addEventListener('click', () => {
-        const presetName = prompt('请输入预设名称：', '');
-        if (!presetName || presetName.trim() === '') return;
         if (prefs.presets.length >= 3) {
           alert('最多保存 3 个预设，请先删除旧预设');
           return;
         }
-        const existingName = prefs.presets.some((p) => p.name === presetName.trim());
-        if (existingName) {
-          alert('预设名称已存在');
-          return;
-        }
-        // 深拷贝快照：noiseOptions/customColors/aiHighlight 都是嵌套对象，浅拷贝会让
-        // 预设与当前偏好共享同一个引用，之后改设置会把已保存的预设一起改掉。
-        // 同时剔除 presets（避免预设自包含）和 deviceId（设备标识，不属于外观配置）。
-        const prefsSnapshot = JSON.parse(JSON.stringify(prefs));
-        delete prefsSnapshot.presets;
-        delete prefsSnapshot.deviceId;
-        prefs.presets.push({
-          name: presetName.trim(),
-          timestamp: Date.now(),
-          prefs: prefsSnapshot,
-        });
-        prefsStore.save();
+        state.savePresetDialogOpen = true;
         INS_render();
+      });
+    }
+
+    // 命名弹层：确定按钮直接从 DOM 读取输入框当前值（不经过 state/每次按键重渲染），
+    // 避免像 custom-bg/custom-text 那样因重渲染打断输入框焦点。
+    const presetNameInput = panel.querySelector('[data-role="preset-name-input"]');
+    const presetNameError = panel.querySelector('[data-role="preset-name-error"]');
+    const presetDialogOverlay = panel.querySelector('[data-role="preset-dialog-overlay"]');
+    const presetNameConfirm = panel.querySelector('[data-role="preset-name-confirm"]');
+    const presetNameCancel = panel.querySelector('[data-role="preset-name-cancel"]');
+
+    function INS_closeSaveDialog() {
+      state.savePresetDialogOpen = false;
+      INS_render();
+    }
+
+    function INS_confirmSaveDialog() {
+      const presetName = (presetNameInput.value || '').trim();
+      if (!presetName) {
+        presetNameError.textContent = '请输入预设名称';
+        presetNameError.hidden = false;
+        return;
+      }
+      const existingName = prefs.presets.some((p) => p.name === presetName);
+      if (existingName) {
+        presetNameError.textContent = '预设名称已存在';
+        presetNameError.hidden = false;
+        return;
+      }
+      // 深拷贝快照：noiseOptions/customColors/aiHighlight 都是嵌套对象，浅拷贝会让
+      // 预设与当前偏好共享同一个引用，之后改设置会把已保存的预设一起改掉。
+      // 同时剔除 presets（避免预设自包含）和 deviceId（设备标识，不属于外观配置）。
+      const prefsSnapshot = JSON.parse(JSON.stringify(prefs));
+      delete prefsSnapshot.presets;
+      delete prefsSnapshot.deviceId;
+      prefs.presets.push({
+        name: presetName,
+        timestamp: Date.now(),
+        prefs: prefsSnapshot,
+      });
+      prefsStore.save();
+      state.savePresetDialogOpen = false;
+      INS_render();
+    }
+
+    if (presetNameInput) {
+      presetNameInput.focus();
+      presetNameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') INS_confirmSaveDialog();
+        if (e.key === 'Escape') INS_closeSaveDialog();
+      });
+    }
+    if (presetNameConfirm) presetNameConfirm.addEventListener('click', INS_confirmSaveDialog);
+    if (presetNameCancel) presetNameCancel.addEventListener('click', INS_closeSaveDialog);
+    if (presetDialogOverlay) {
+      presetDialogOverlay.addEventListener('click', (e) => {
+        if (e.target === presetDialogOverlay) INS_closeSaveDialog();
       });
     }
 
@@ -722,12 +833,18 @@ window.INS_Reader = window.INS_Reader || {};
       });
     });
 
-    // 简洁模式降噪开关
+    // 一键降噪开关：本身就是阅读模式的总开关，关闭即直接恢复原网页，
+    // 不是仅仅停用降噪子功能——用户预期"关掉这个开关=退出阅读模式"，
+    // 与详细配置里"恢复原网页"按钮和弹出页"一键降噪"开关的效果保持一致。
     const simpleNoiseToggle = panel.querySelector('[data-role="simple-noise-toggle"]');
     if (simpleNoiseToggle) {
       simpleNoiseToggle.addEventListener('click', () => {
-        prefs.noiseReduction = !prefs.noiseReduction;
+        if (prefs.enabled) {
+          appController.restoreOriginalPage();
+          return;
+        }
         prefs.enabled = true;
+        prefs.noiseReduction = true;
         prefsStore.save();
         appController.applyAll();
         INS_render();
@@ -828,21 +945,21 @@ window.INS_Reader = window.INS_Reader || {};
       color: #65716a; cursor: pointer; transition: background 0.15s, color 0.15s;
     }
     .segmented button.selected { background: #fff; color: #19786c; font-weight: 600; box-shadow: 0 1px 3px rgba(32,44,37,0.08); }
-    .expandable-group { margin: 10px 0; }
-    .group-header {
+    .nav-row {
       display: flex; justify-content: space-between; align-items: center;
-      width: 100%; padding: 10px 11px; background: #eaf5f0; border-radius: 5px;
-      border: 0; cursor: pointer; font-size: 12px; font-weight: 700; color: #246d62;
-      transition: background 0.15s;
+      width: 100%; padding: 8px 10px; background: #f4f8f5; border-radius: 5px;
+      margin: 6px 0; transition: background 0.15s;
     }
-    .group-header:hover { background: #ddf1ed; }
-    .group-icon { font-size: 10px; transition: transform 0.18s; }
-    .group-header.open .group-icon { transform: rotate(180deg); }
-    .group-content {
-      max-height: 0; overflow: hidden; transition: max-height 0.2s ease-out;
-      margin-top: 0;
+    .nav-row:hover { background: #ecf4ee; }
+    .nav-row-main {
+      display: flex; align-items: center; gap: 6px; flex: 1;
+      border: 0; background: none; padding: 0; margin: 0;
+      font: inherit; font-size: 11px; font-weight: 700; color: #246d62; cursor: pointer;
     }
-    .group-content.expanded { max-height: 800px; margin-top: 6px; }
+    .nav-row.open { background: #ecf4ee; }
+    .nav-chevron { font-size: 13px; color: #7c9c93; display: inline-block; transition: transform 0.15s; }
+    .nav-row.open .nav-chevron { transform: rotate(90deg); }
+    .group-content { margin: 6px 2px 12px; padding: 0 2px; }
     .custom-colors { display: flex; gap: 14px; margin-bottom: 10px; font-size: 11px; color: #56625c; }
     .custom-colors label { display: flex; align-items: center; gap: 6px; }
     .custom-colors input[type="color"] { width: 24px; height: 20px; border: 1px solid #d7ded8; border-radius: 3px; padding: 0; cursor: pointer; }
@@ -852,10 +969,14 @@ window.INS_Reader = window.INS_Reader || {};
     /* 步进器行：标签在左、加减控件在右，同一行对齐 */
     .setting.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .setting.row > span { margin-bottom: 0; }
-    .step-value {
-      min-width: 42px; text-align: center; font-variant-numeric: tabular-nums;
-      color: #278477; font-weight: 500;
+    .step-value-wrap { display: flex; align-items: center; gap: 3px; min-width: 46px; justify-content: center; }
+    .step-value-input {
+      width: 34px; text-align: center; font-variant-numeric: tabular-nums;
+      color: #278477; font-weight: 500; font-size: 12px; font-family: inherit;
+      border: 1px solid #d7ded8; border-radius: 4px; background: #fff; padding: 2px 0;
     }
+    .step-value-input:focus { outline: none; border-color: #1f8b7d; }
+    .step-suffix { font-size: 11px; color: #278477; font-weight: 500; }
     .bg-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
     .bg-swatch {
       width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
@@ -887,12 +1008,12 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .width-row button.active { color: #187a6e; background: #deeee8; }
     .save-preset {
-      width: 100%; height: 26px; margin-top: 8px; border: 1px solid #d7ded8; border-radius: 4px;
-      background: #fff; color: #246d62; font-size: 11px; cursor: pointer; transition: background 0.15s;
+      width: 100%; height: 30px; border: 1px dashed #b9c7bf; border-radius: 4px;
+      background: transparent; color: #5f7a6c; font-size: 11px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
     }
-    .save-preset:hover { background: #eaf5f0; }
-    .presets-section { margin: 10px 0; }
-    .presets-header { font-size: 11px; font-weight: 600; color: #246d62; margin-bottom: 6px; padding: 0 5px; }
+    .save-preset:hover { background: #f4f8f5; border-color: #8fa89d; }
+    .presets-section { margin: 14px 0 0; }
+    .presets-header { font-size: 11px; font-weight: 600; color: #246d62; margin: 10px 0 6px; padding: 0 5px; }
     .presets-list { display: flex; flex-direction: column; gap: 4px; }
     .preset-item { display: flex; gap: 6px; align-items: center; }
     .preset-apply {
@@ -905,18 +1026,36 @@ window.INS_Reader = window.INS_Reader || {};
       background: #fff; color: #56625c; font-size: 14px; cursor: pointer; transition: all 0.15s;
     }
     .preset-delete:hover { background: #fff5f5; color: #b95042; }
+    .dialog-overlay {
+      position: fixed; inset: 0; z-index: 10; background: rgba(32, 44, 37, 0.32);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dialog-card {
+      width: 260px; padding: 16px; background: #fffdf9; border-radius: 8px;
+      border: 1px solid #ccd4ce; box-shadow: 0 12px 32px rgba(37, 59, 51, 0.18);
+    }
+    .dialog-title { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #246d62; }
+    .dialog-input {
+      width: 100%; height: 28px; box-sizing: border-box; padding: 0 8px; font: inherit; font-size: 12px;
+      border: 1px solid #d7ded8; border-radius: 4px; background: #fff; color: #33403a;
+    }
+    .dialog-input:focus { outline: none; border-color: #1f8b7d; }
+    .dialog-error { margin: 6px 0 0; font-size: 10px; color: #b95042; }
+    .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .dialog-btn {
+      flex: 1; height: 28px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: background 0.15s;
+    }
+    .dialog-btn-cancel { border: 1px solid #d7ded8; background: #fff; color: #56625c; }
+    .dialog-btn-cancel:hover { background: #eef1ed; }
+    .dialog-btn-confirm { border: 1px solid #1f8b7d; background: #1f8b7d; color: #fff; }
+    .dialog-btn-confirm:hover { background: #197a6e; }
     .noise-row { display: flex; justify-content: space-between; align-items: center; min-height: 26px; color: #53615a; gap: 8px; }
     .noise-row > span { display: flex; align-items: baseline; gap: 5px; }
-    .noise-note { font-style: normal; font-size: 10px; color: #b95042; white-space: nowrap; }
-    .noise-feedback { margin: 7px 0 0; font-size: 10px; color: #718078; }
+    .noise-risk-disclaimer { margin: 8px 0 0; font-size: 10px; color: #b08a63; line-height: 1.5; }
+    .noise-reset-hint { margin: 8px 0 0; font-size: 10px; color: #718078; line-height: 1.5; }
+    .noise-feedback { margin: 12px 0 0; font-size: 10px; color: #718078; }
     .ai-row { display: flex; justify-content: space-between; align-items: center; height: 26px; color: #53615a; }
     .ai-hint { margin: 4px 0 8px; font-size: 10px; color: #718078; line-height: 1.5; }
-    .ai-generate {
-      width: 100%; height: 28px; border: 1px solid #d7ded8; border-radius: 4px;
-      background: #fff; color: #246d62; font-size: 12px; cursor: pointer; transition: background 0.15s;
-    }
-    .ai-generate:hover:not(:disabled) { background: #eaf5f0; }
-    .ai-generate:disabled { opacity: 0.6; cursor: default; }
     .ai-progress { margin: 8px 0 0; height: 3px; border-radius: 999px; background: #e3ece7; overflow: hidden; }
     .ai-progress-bar { width: 40%; height: 100%; border-radius: 999px; background: #1f8b7d; animation: ins-reader-ai-progress 1.1s ease-in-out infinite; }
     @keyframes ins-reader-ai-progress {
@@ -925,11 +1064,6 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .ai-status { margin: 6px 0 0; font-size: 10px; color: #718078; min-height: 12px; }
     .ai-status.error { color: #b95042; }
-    .ai-highlight-section { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid #e3ece7; }
-    .ai-highlight-header { font-size: 11px; font-weight: 600; color: #246d62; margin-bottom: 6px; }
-    .highlight-option { margin: 4px 0; }
-    .highlight-option label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #56625c; cursor: pointer; }
-    .highlight-option input[type="checkbox"] { cursor: pointer; }
     .switch {
       cursor: pointer; background: #c8d0ca; border: 0; border-radius: 999px;
       width: 33px; height: 18px; padding: 2px; transition: background 0.18s;
@@ -947,7 +1081,16 @@ window.INS_Reader = window.INS_Reader || {};
     }
     .restore:hover { background: #f6f8f5; }
     .simple-mode { display: flex; flex-direction: column; gap: 12px; }
-    .simple-row { display: flex; justify-content: space-between; align-items: center; }
+    .simple-header { display: flex; align-items: center; gap: 8px; }
+    .brand-icon {
+      flex: none; width: 22px; height: 22px; border-radius: 6px; background: #1f8b7d;
+      display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    }
+    .brand-icon span { display: block; height: 2px; border-radius: 1px; background: #fff; }
+    .brand-icon span:nth-child(1) { width: 12px; }
+    .brand-icon span:nth-child(2) { width: 9px; }
+    .brand-icon span:nth-child(3) { width: 12px; }
+    .simple-title { flex: 1; font-size: 16px; font-weight: 700; color: #21463f; }
     .simple-presets { display: flex; flex-direction: column; gap: 6px; }
     .simple-presets-title { font-size: 11px; color: #8a948e; }
     .simple-preset-btn {
@@ -955,11 +1098,14 @@ window.INS_Reader = window.INS_Reader || {};
       color: #246d62; font-size: 11px; cursor: pointer; transition: all 0.15s;
     }
     .simple-preset-btn:hover { background: #eaf5f0; }
-    .expand-btn {
-      width: 100%; height: 32px; border: 1px solid #d7ded8; border-radius: 4px; background: #fff;
-      color: #246d62; font-size: 12px; cursor: pointer; transition: all 0.15s; font-weight: 600;
+    .simple-divider { border: 0; border-top: 1px solid #e3e8e4; margin: 0; }
+    .detail-link {
+      align-self: flex-end; display: inline-flex; align-items: center; gap: 2px;
+      border: 0; background: none; padding: 0; margin: 0;
+      color: #1f8b7d; font-size: 12px; font-weight: 600; cursor: pointer; transition: color 0.15s;
     }
-    .expand-btn:hover { background: #eaf5f0; }
+    .detail-link:hover { color: #166b60; }
+    .detail-link .chevron { font-size: 13px; }
   `;
 
   window.INS_Reader.panelUI = {

@@ -51,7 +51,7 @@
 | 功能 | 说明 |
 |---|---|
 | 🧠 **智能正文定位** | Readability.js 优先定位，失败时自动降级到语义标签 + 文本密度算法 |
-| 🧹 **动态降噪** | 广告 / 侧边栏导航 / 评论区 / 弹窗横幅 / 会员推销，五类干扰元素独立开关 |
+| 🧹 **动态降噪** | 侧边栏导航 / 评论区 / 弹窗横幅 / 视频（暂停播放并隐藏），四类干扰元素独立开关（广告/会员推销按默认值生效，不作为用户可调开关暴露） |
 | 🎨 **主题切换** | 温和 · 专注 · 自定义配色，三种阅读氛围 |
 | 🔠 **排版微调** | 字号 14–28px、行间距、字间距均可无级调节 |
 | 📏 **内容宽度** | 宽版 900px / 窄版 640px，适配不同阅读习惯 |
@@ -194,9 +194,12 @@ renderReaderLayer():
   记录 articleSourceRoot 相对 document.body 的子节点下标路径 path
   bodyClone ← document.body.cloneNode(true)     // 克隆整个 body 而非只克隆正文，
                                                   // 让广告/侧边栏等平级干扰元素一起被克隆进来
-  for each 开启的降噪类别 in [ads, sidebar, comments, banners, marketing]:
+  按 path 在**未清理**的 bodyClone 中先定位出正文节点 clone，拿到节点引用
+                                                  // 必须在清理前定位：清理会删除 clone 之外/
+                                                  // 之前的兄弟节点，导致按下标记录的 path 失效
+  for each 开启的降噪类别 in [sidebar, comments, banners, video]（面板可调）
+                          + [ads, marketing]（按默认值生效，不作为开关暴露）:
     用对应 CSS 选择器组在 bodyClone 中 querySelectorAll，逐个 remove()
-  按 path 在清理后的 bodyClone 中重新定位出正文节点 clone
   在独立 Shadow DOM 宿主（position:fixed 全屏层）中：
     注入主题配色 / 字号 / 行距 / 字距 / 内容宽度对应样式
     挂载 clone 展示
@@ -314,7 +317,7 @@ Content-Type: application/json
 ## 🗺️ Roadmap
 
 - [x] 正文定位（Readability + 降级算法）
-- [x] 五类干扰元素独立降噪
+- [x] 四类干扰元素独立降噪（侧边栏/评论区/弹窗横幅/视频（暂停播放并隐藏））
 - [x] 沉浸阅读层 + 主题/字号/行距/字距/宽度自定义
 - [x] 阅读进度条 + 剩余时间估算
 - [x] AI 摘要代理（FastAPI 后端，密钥不落前端）

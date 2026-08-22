@@ -33,6 +33,7 @@
     readerLayer.remove();
     readerLayer.unlockOriginalPage();
     readerLayer.setSummary('');
+    readerLayer.setHighlightHtml('');
     prefsStore.save();
     panelUI.render();
   }
