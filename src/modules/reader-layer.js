@@ -2,12 +2,16 @@
 // INS_Reader · 沉浸阅读层模块
 // 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
 // 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
-// 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath / readingStats。
+// 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath /
+// readingStats / aiEnhance。
 // 调用者：content.js 的 applyAll()/restoreOriginalPage() 调用 render()/remove()/
 // lockOriginalPage()/unlockOriginalPage()；render() 返回 false 时 content.js 不会
 // 锁定原页面。panel-ui.js 每次改设置后调用 render() 重新渲染，并读取
 // getHiddenCount()/getArticleText()/getSummary()/getLastFeasibilityReason() 展示状态、
 // 调用 setSummary() 写入 AI 摘要结果。
+// render() 末尾会调用 aiEnhance.reapply()：克隆体每次重建都是新节点，已生成的
+// AI 改写/高亮必须重新落地一次（走缓存，不重复请求）。getRenderedArticle() 就是
+// 给 aiEnhance 用来拿当前克隆正文节点的。
 
 window.INS_Reader = window.INS_Reader || {};
 
@@ -20,6 +24,7 @@ window.INS_Reader = window.INS_Reader || {};
     onHiddenCountChange: null, // 供面板模块订阅，渲染完成后回调最新的降噪计数
     summaryText: '', // AI 摘要结果，由面板模块调用 aiClient 后写入
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()
+    renderedArticle: null, // 克隆体中的正文节点，供 aiEnhance 落地改写/高亮
     lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
     pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
   };
@@ -115,6 +120,7 @@ window.INS_Reader = window.INS_Reader || {};
     }
     const clone = (path && domPath.resolveChildIndexPath(bodyClone, path)) || bodyClone;
     state.articleText = clone.textContent || '';
+    state.renderedArticle = clone;
 
     const typographyEnabled = prefs.typographyEnabled !== false;
     const theme = { ...prefs.customColors, accent: '#FFB800' };
@@ -186,6 +192,7 @@ window.INS_Reader = window.INS_Reader || {};
         margin: 0 0 6px;
       }
       .ins-reader-summary-body { white-space: pre-line; }
+      ${window.INS_Reader.aiEnhance.HIGHLIGHT_CSS}
     `;
     shadow.appendChild(style);
 
@@ -231,12 +238,17 @@ window.INS_Reader = window.INS_Reader || {};
         : `剩余 ${readingStats.formatMinutes(remaining)}`;
     });
 
+    // 克隆体是全新节点，之前落地的 AI 改写/高亮随旧克隆体一起消失了，
+    // 必须在挂载后用缓存重新落地一次（不发请求）。
+    window.INS_Reader.aiEnhance.reapply();
+
     return true;
   }
 
   function INS_remove() {
     INS_restoreAutoplayMedia();
     INS_setHiddenCount(0);
+    state.renderedArticle = null;
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;
@@ -253,6 +265,12 @@ window.INS_Reader = window.INS_Reader || {};
 
   function INS_getArticleText() {
     return state.articleText;
+  }
+
+  // 克隆体中的正文节点，供 aiEnhance 在阅读层内落地改写/高亮。
+  // 阅读层未渲染或已卸载时返回 null，此时 aiEnhance 会改为作用于真实页面。
+  function INS_getRenderedArticle() {
+    return state.renderedArticle;
   }
 
   function INS_setSummary(text) {
@@ -279,6 +297,7 @@ window.INS_Reader = window.INS_Reader || {};
     getHiddenCount: INS_getHiddenCount,
     setOnHiddenCountChange: INS_setOnHiddenCountChange,
     getArticleText: INS_getArticleText,
+    getRenderedArticle: INS_getRenderedArticle,
     setSummary: INS_setSummary,
     getSummary: INS_getSummary,
     getLastFeasibilityReason: INS_getLastFeasibilityReason,

@@ -35,6 +35,8 @@
         "src/modules/dom-path.js",
         "src/modules/reading-stats.js",
         "src/modules/ai-client.js",
+        "src/modules/ai-enhance.js",
+        "src/modules/ai-card.js",
         "src/modules/reader-layer.js",
         "src/modules/panel-ui.js",
         "src/content.js"

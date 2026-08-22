@@ -191,6 +191,96 @@ window.INS_Reader = window.INS_Reader || {};
     return !!(shadow && shadow.querySelector('.ins-reader-panel'));
   }
 
+  // 两个 AI 开关的统一执行入口。开 → 调 aiEnhance 生成并落地；关 → 撤销落地效果。
+  // 失败时把开关回滚成关闭状态，避免 UI 显示"已开启"但页面上什么都没发生。
+  async function INS_toggleAiFeature(feature, enable) {
+    const { aiEnhance, aiCard, prefsStore } = window.INS_Reader;
+    const prefs = prefsStore.get();
+
+    if (!enable) {
+      if (feature === 'simplify') {
+        const { keyInfoCleared } = aiEnhance.clearSimplify();
+        if (keyInfoCleared) INS_dropKeyInfo(prefs);
+      } else {
+        aiEnhance.clearKeyInfo();
+      }
+      aiCard.clearFeature(feature);
+      return;
+    }
+
+    aiCard.showLoading(feature, feature === 'simplify' ? '正在改写段落…' : '正在提取重点…');
+    try {
+      if (feature === 'simplify') {
+        const { applied, keyInfoCleared } = await aiEnhance.runSimplify();
+        aiCard.showResult(
+          feature,
+          keyInfoCleared
+            ? `已简化 ${applied} 个段落，原有高亮已失效并关闭`
+            : `已简化 ${applied} 个段落`
+        );
+        if (keyInfoCleared) INS_dropKeyInfo(prefs);
+      } else {
+        const count = await aiEnhance.runKeyInfo();
+        aiCard.showResult(feature, `已高亮 ${count} 处重点`);
+      }
+    } catch (err) {
+      console.error('[INS_Reader][panel-ui] AI 功能执行失败', {
+        feature,
+        message: err && err.message,
+      });
+      aiCard.showError(feature, err.message || '处理失败');
+      // 回滚开关：功能没生效，prefs 不应停留在开启态。
+      INS_setAiFeaturePref(prefs, feature, false);
+      prefsStore.save();
+      if (INS_isOpen()) INS_render();
+    }
+  }
+
+  // 改写/还原段落后高亮整体失去落点时，ai-enhance 已经把高亮关掉了，
+  // 这里把开关和卡片一起同步过去，避免面板显示开启而页面上没有高亮。
+  function INS_dropKeyInfo(prefs) {
+    const { aiCard, prefsStore } = window.INS_Reader;
+    INS_setAiFeaturePref(prefs, 'keyinfo', false);
+    prefsStore.save();
+    aiCard.clearFeature('keyinfo');
+    if (INS_isOpen()) INS_render();
+  }
+
+  // simplify 对应 aiHighlight 里的两个子标志，keyinfo 对应一个；
+  // enabled 是三者的并集，写任何一个都要同步刷新它。
+  function INS_setAiFeaturePref(prefs, feature, value) {
+    if (feature === 'simplify') {
+      prefs.aiHighlight.breakLongParagraphs = value;
+      prefs.aiHighlight.simplifySentences = value;
+    } else {
+      prefs.aiHighlight.markKeyInfo = value;
+    }
+    prefs.aiHighlight.enabled = Boolean(
+      prefs.aiHighlight.breakLongParagraphs ||
+        prefs.aiHighlight.simplifySentences ||
+        prefs.aiHighlight.markKeyInfo
+    );
+  }
+
+  // 浮层卡片上的"撤销"：既要撤销页面效果，也要把对应的 prefs 开关关掉，
+  // 否则面板再打开时开关仍显示开启，与页面实际状态不符。
+  function INS_handleAiUndo(features) {
+    const { aiEnhance, aiCard, prefsStore } = window.INS_Reader;
+    const prefs = prefsStore.get();
+    for (const feature of features) {
+      if (feature === 'simplify') {
+        const { keyInfoCleared } = aiEnhance.clearSimplify();
+        if (keyInfoCleared) INS_setAiFeaturePref(prefs, 'keyinfo', false);
+      } else {
+        aiEnhance.clearKeyInfo();
+      }
+      INS_setAiFeaturePref(prefs, feature, false);
+      aiCard.clearFeature(feature);
+    }
+    prefsStore.save();
+    if (INS_isOpen()) INS_render();
+  }
+
   function INS_updateNoiseCount(count) {
     const shadow = state.panelHost && state.panelHost.shadowRoot;
     if (!shadow) return;
@@ -654,26 +744,32 @@ window.INS_Reader = window.INS_Reader || {};
       });
     }
 
-    // AI 内容助手四项二级开关。只有总开关会决定是否进入阅读模式，模块设置本身不自动启用总开关。
+    // AI 内容助手两项二级开关：开关不只是写 prefs，会立即触发/撤销对应的 AI 处理。
+    // 请求耗时较长且面板会因点击页面而关闭，进度与失败原因统一交给 aiCard 浮层展示。
     panel.querySelectorAll('[data-ai-feature]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (btn.disabled || aiDisabled) return;
         const feature = btn.getAttribute('data-ai-feature');
         INS_markCustomized(prefs);
         if (feature === 'simplifyParagraphs') {
           const next = !(prefs.aiHighlight.breakLongParagraphs && prefs.aiHighlight.simplifySentences);
-          prefs.aiHighlight.breakLongParagraphs = next;
-          prefs.aiHighlight.simplifySentences = next;
-          prefs.aiHighlight.enabled = Boolean(next || prefs.aiHighlight.markKeyInfo);
+          INS_setAiFeaturePref(prefs, 'simplify', next);
+          prefsStore.save();
+          INS_render();
+          await INS_toggleAiFeature('simplify', next);
+          return;
         }
-        else if (Object.prototype.hasOwnProperty.call(prefs.aiHighlight, feature)) {
+        if (feature === 'markKeyInfo') {
+          const next = !prefs.aiHighlight.markKeyInfo;
+          INS_setAiFeaturePref(prefs, 'keyinfo', next);
+          prefsStore.save();
+          INS_render();
+          await INS_toggleAiFeature('keyinfo', next);
+          return;
+        }
+        if (Object.prototype.hasOwnProperty.call(prefs.aiHighlight, feature)) {
           prefs.aiHighlight[feature] = !prefs.aiHighlight[feature];
-          prefs.aiHighlight.enabled = Boolean(
-            prefs.aiHighlight.breakLongParagraphs ||
-              prefs.aiHighlight.simplifySentences ||
-              prefs.aiHighlight.markKeyInfo
-          );
         }
         prefsStore.save();
         INS_render();
@@ -1071,5 +1167,6 @@ window.INS_Reader = window.INS_Reader || {};
     render: INS_render,
     isOpen: INS_isOpen,
     updateNoiseCount: INS_updateNoiseCount,
+    handleAiUndo: INS_handleAiUndo,
   };
 })();

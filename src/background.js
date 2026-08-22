@@ -3,13 +3,15 @@
 // 工具栏点击直接在当前网页打开入口面板；不使用 default_popup，避免回退到旧的
 // 浏览器 Popup 页面。对于扩展安装/更新前就已经打开的页面，按需补注入内容脚本。
 //
-// 承担 AI 摘要的实际网络请求：content script 里的 fetch 会受宿主页面的 CSP
+// 承担 AI 内容助手的实际网络请求：content script 里的 fetch 会受宿主页面的 CSP
 // （如 connect-src 白名单）约束，很多站点会因此直接拦截插件对 localhost:8000
 // 的请求；service worker 是独立执行上下文，不受宿主页面 CSP 影响，所以把请求
 // 转发到这里执行。
 // 调用者：仅 ai-client.js 通过 chrome.runtime.sendMessage({ type: 'INS_READER_AI_SUMMARIZE' })
 // 委托请求；本文件转发到 backend/routers/ai.py 的 POST /v1/ai/summarize，
 // 结果通过 sendResponse 回传给 ai-client.js。
+// 后端按 mode 返回 result（summary 纯文本）或 data（simplify/keyinfo 结构化对象），
+// 本文件不解释语义，只做形状校验后原样透传。
 
 const AI_API_BASE = 'http://localhost:8000';
 const PREFS_STORAGE_KEY = 'ins_reader_prefs_v1';
@@ -86,6 +88,8 @@ const CONTENT_SCRIPT_FILES = [
   'src/modules/dom-path.js',
   'src/modules/reading-stats.js',
   'src/modules/ai-client.js',
+  'src/modules/ai-enhance.js',
+  'src/modules/ai-card.js',
   'src/modules/reader-layer.js',
   'src/modules/panel-ui.js',
   'src/content.js',
@@ -124,7 +128,7 @@ chrome.action.onClicked.addListener((tab) => {
 
 async function INS_handleSummarize(payload) {
   const startedAt = performance.now();
-  console.log('[INS_Reader][background] 开始处理摘要请求', {
+  console.log('[INS_Reader][background] 开始处理 AI 请求', {
     runtimeId: chrome.runtime.id,
     apiBase: AI_API_BASE,
     textLength: payload && payload.text ? payload.text.length : undefined,
@@ -168,18 +172,22 @@ async function INS_handleSummarize(payload) {
     });
     return { ok: false, status: resp.status, detail };
   }
-  if (!body || typeof body.result !== 'string') {
-    console.error('[INS_Reader][background] 后端返回 200 但 result 格式异常', {
+  if (!body || (typeof body.result !== 'string' && (!body.data || typeof body.data !== 'object'))) {
+    console.error('[INS_Reader][background] 后端返回 200 但响应体格式异常', {
+      mode: payload && payload.mode,
       bodyType: body === null ? 'null' : typeof body,
       resultType: body && typeof body.result,
+      dataType: body && typeof body.data,
     });
     return { ok: false, status: 502, detail: 'AI 服务返回格式异常' };
   }
-  console.log('[INS_Reader][background] 摘要成功', {
+  console.log('[INS_Reader][background] AI 请求成功', {
     elapsed: `${Math.round(performance.now() - startedAt)}ms`,
-    resultLength: body.result.length,
+    mode: payload && payload.mode,
+    resultLength: typeof body.result === 'string' ? body.result.length : undefined,
+    dataKeys: body.data ? Object.keys(body.data) : undefined,
   });
-  return { ok: true, result: body.result };
+  return { ok: true, result: body.result, data: body.data };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
