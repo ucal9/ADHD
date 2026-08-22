@@ -1,6 +1,10 @@
 .DS_Store
 node_modules/
-backend/.env
-backend/venv/
-backend/__pycache__/
-backend/**/__pycache__/
+dist/
+.vite/
+legacy-extension/backend/.env
+legacy-extension/backend/venv/
+legacy-extension/backend/venv312/
+legacy-extension/backend/__pycache__/
+legacy-extension/backend/**/__pycache__/
+.pnpm-store/
