@@ -1,6 +1,6 @@
 # 缓读插件版本
 
-- `calmread-chrome-extension-0.2.5-controls-and-diagnostics.zip`：当前版本。在 0.2.4 UI 优化基础上，增加一级模块关闭时的二级控件灰态、保存模式自动选中、AI 网络错误诊断和隐藏数量归零/异常规则容错。
+- `calmread-chrome-extension-0.2.6-noise-video-scope.zip`：当前版本。在 0.2.5 控件与诊断优化基础上，调整新浪动态降噪范围，视频动画同时覆盖正文和右侧视频推荐，并移除阅读层剩余时间显示。
 
 - `calmread-chrome-extension-0.2.4-ui-polish.zip`：上一版 UI 参考。在 0.2.3 直达入口基础上更新启用态 Icon、浅黄色预设选中态、预设胶囊布局和入口面板文案。
 - `calmread-chrome-extension-0.2.3-direct-action.zip`：上一版参考。移除浏览器 Popup，工具栏点击由 service worker 直接打开网页内入口面板；已打开页面会按需注入内容脚本。

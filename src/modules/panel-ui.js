@@ -332,14 +332,15 @@ window.INS_Reader = window.INS_Reader || {};
       sidebar: '隐藏侧边栏',
       comments: '隐藏评论区',
       banners: '隐藏弹窗横幅',
-      blockAllVideos: '屏蔽所有视频',
+      blockAllVideos: '屏蔽所有视频动画',
     };
 
     // 降噪开关的展示顺序与 develop 设计保持一致。
     const noiseOrder = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
-    const typographyDisabled = prefs.typographyEnabled === false;
-    const aiDisabled = prefs.aiEnabled === false;
-    const noiseDisabled = prefs.noiseReduction === false;
+    const readingDisabled = prefs.enabled === false;
+    const typographyDisabled = readingDisabled || prefs.typographyEnabled === false;
+    const aiDisabled = readingDisabled || prefs.aiEnabled === false;
+    const noiseDisabled = readingDisabled || prefs.noiseReduction === false;
 
     const feasibilityReason = readerLayer.getLastFeasibilityReason();
     const feasibilityMessages = {
@@ -402,7 +403,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="typography">
           <div class="group-header ${state.expandedMenus.typography ? 'open' : ''}" data-role="typography-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.typography}" aria-controls="typography-menu">
             <span class="group-label">${MODULE_ICONS.typography}<span>舒适排版</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.typographyEnabled !== false ? 'on' : ''}" data-role="typography-master-switch" aria-label="舒适排版开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="switch small ${prefs.typographyEnabled !== false ? 'on' : ''}" data-role="typography-master-switch" aria-label="舒适排版开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
           </div>
           <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''} ${typographyDisabled ? 'is-disabled' : ''}" data-role="typography-menu" role="region" aria-disabled="${typographyDisabled}">
             <div class="setting">
@@ -456,7 +457,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="ai">
           <div class="group-header ${state.expandedMenus.ai ? 'open' : ''}" data-role="ai-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.ai}" aria-controls="ai-menu">
             <span class="group-label">${MODULE_ICONS.ai}<span>AI 内容助手</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="switch small ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
           </div>
           <div id="ai-menu" class="group-content ${state.expandedMenus.ai ? 'expanded' : ''} ${aiDisabled ? 'is-disabled' : ''}" data-role="ai-menu" role="region" aria-disabled="${aiDisabled}">
             ${
@@ -489,7 +490,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="noise">
           <div class="group-header ${state.expandedMenus.noise ? 'open' : ''}" data-role="noise-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.noise}" aria-controls="noise-menu">
             <span class="group-label">${MODULE_ICONS.noise}<span>动态降噪</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="动态降噪开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="switch small ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="动态降噪开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
           </div>
           <div id="noise-menu" class="group-content ${state.expandedMenus.noise ? 'expanded' : ''} ${noiseDisabled ? 'is-disabled' : ''}" data-role="noise-menu" role="region" aria-disabled="${noiseDisabled}">
             ${noiseOrder
@@ -538,12 +539,20 @@ window.INS_Reader = window.INS_Reader || {};
     if (panelEnabledToggle) {
       panelEnabledToggle.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (prefs.enabled) {
+          appController.deactivateReadingMode();
+          return;
+        }
         if (!prefs.enabled && !prefs.hasActivated && !prefs.hasCustomized && !prefs.activePreset) {
           INS_resetToStrictDefaults(prefs);
           prefs.hasCustomized = false;
           prefs.activePreset = '';
         }
-        prefs.enabled = !prefs.enabled;
+        // 总开关重新开启时，恢复停用期间保持的三个一级默认开启态。
+        prefs.typographyEnabled = true;
+        prefs.aiEnabled = true;
+        prefs.noiseReduction = true;
+        prefs.enabled = true;
         prefs.hasActivated = true;
         prefsStore.save();
         appController.applyAll();
@@ -674,6 +683,7 @@ window.INS_Reader = window.INS_Reader || {};
     if (typographyMasterSwitch) {
       typographyMasterSwitch.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (typographyMasterSwitch.disabled || !prefs.enabled) return;
         prefs.typographyEnabled = prefs.typographyEnabled === false;
         INS_markCustomized(prefs);
         prefsStore.save();
@@ -699,6 +709,7 @@ window.INS_Reader = window.INS_Reader || {};
     if (noiseMasterSwitch) {
       noiseMasterSwitch.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (noiseMasterSwitch.disabled || !prefs.enabled) return;
         prefs.noiseReduction = !prefs.noiseReduction;
         INS_markCustomized(prefs);
         prefsStore.save();
@@ -726,7 +737,14 @@ window.INS_Reader = window.INS_Reader || {};
     if (simpleEnabledToggle) {
       simpleEnabledToggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        prefs.enabled = !prefs.enabled;
+        if (prefs.enabled) {
+          appController.deactivateReadingMode();
+          return;
+        }
+        prefs.typographyEnabled = true;
+        prefs.aiEnabled = true;
+        prefs.noiseReduction = true;
+        prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
         INS_render();
@@ -737,6 +755,7 @@ window.INS_Reader = window.INS_Reader || {};
     if (aiMasterSwitch) {
       aiMasterSwitch.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (aiMasterSwitch.disabled || !prefs.enabled) return;
         prefs.aiEnabled = !prefs.aiEnabled;
         INS_markCustomized(prefs);
         prefsStore.save();

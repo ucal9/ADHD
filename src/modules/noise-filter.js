@@ -21,16 +21,24 @@ window.INS_Reader = window.INS_Reader || {};
     blockAllVideos: ['video', 'iframe[src*="youtube"]', 'iframe[src*="bilibili"]', 'iframe[src*="vimeo"]', 'iframe[src*="player"]', '[class*="video-player"]', '[class*="videoPlayer"]'],
   };
 
-  function INS_activeSelectors() {
+  function INS_activeRules() {
     const prefs = window.INS_Reader.prefsStore.get();
     const groups = prefs.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
     const siteGroups = window.INS_Reader.siteAdapters?.getNoiseSelectors?.() || {};
+    // 站点适配器提供某个分类时，以站点规则为准，避免通用模糊选择器
+    // （例如 [class*="comment"] / video）误伤该站点的正文或侧栏。
     const mergedGroups = Object.fromEntries(
-      Object.keys(NOISE_GROUPS).map((key) => [key, [...NOISE_GROUPS[key], ...(siteGroups[key] || [])]])
+      Object.keys(NOISE_GROUPS).map((key) => [
+        key,
+        siteGroups[key]?.length ? siteGroups[key] : NOISE_GROUPS[key],
+      ])
     );
-    return Object.keys(mergedGroups)
-      .filter((key) => groups[key])
-      .flatMap((key) => mergedGroups[key]);
+    // 分类之间使用并集语义：任意一个已开启的分类命中节点，节点就会被移除。
+    return Object.entries(mergedGroups)
+      .filter(([key]) => groups[key])
+      .flatMap(([category, selectors]) =>
+        selectors.map((selector) => ({ category, selector }))
+      );
   }
 
   // 返回移除的元素数量。cloneRoot 必须是克隆体，绝不作用于原始 DOM。
@@ -38,7 +46,7 @@ window.INS_Reader = window.INS_Reader || {};
     const prefs = window.INS_Reader.prefsStore.get();
     if (!prefs.noiseReduction) return 0;
     let count = 0;
-    for (const selector of INS_activeSelectors()) {
+    for (const { selector } of INS_activeRules()) {
       let elements;
       try {
         elements = cloneRoot.querySelectorAll(selector);

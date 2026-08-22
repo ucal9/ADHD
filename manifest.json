@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "缓读 · 无干扰阅读模式",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "在真实网页上重构正文排版、降低视觉噪音，并允许用户随时恢复原页面。",
   "icons": {
     "16": "icons/icon16.png",

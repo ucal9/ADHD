@@ -30,9 +30,15 @@
     }
   }
 
-  function INS_restoreOriginalPage() {
+  // 所有“关闭阅读模式”的入口都走同一状态转换。总开关关闭期间，一级模块
+  // 保持默认开启态但不可操作；重新开启总开关即可一次恢复三项一级功能。
+  function INS_deactivateReadingMode() {
     const prefs = prefsStore.get();
     prefs.enabled = false;
+    prefs.activePreset = '';
+    prefs.typographyEnabled = true;
+    prefs.aiEnabled = true;
+    prefs.noiseReduction = true;
     readerLayer.remove();
     readerLayer.clearFeasibilityReason();
     readerLayer.unlockOriginalPage();
@@ -44,12 +50,20 @@
     panelUI.render();
   }
 
+  function INS_restoreOriginalPage() {
+    INS_deactivateReadingMode();
+  }
+
   readerLayer.setOnHiddenCountChange(panelUI.updateNoiseCount);
   // 浮层卡片上的"撤销"要同时改 prefs 和重绘面板，这些都在 panel-ui 里，
   // 因此由本文件把两个模块接起来，卡片本身不反向依赖面板。
   aiCard.setOnUndo(panelUI.handleAiUndo);
 
-  window.INS_Reader.appController = { applyAll: INS_applyAll, restoreOriginalPage: INS_restoreOriginalPage };
+  window.INS_Reader.appController = {
+    applyAll: INS_applyAll,
+    deactivateReadingMode: INS_deactivateReadingMode,
+    restoreOriginalPage: INS_restoreOriginalPage,
+  };
 
   // ---- 初始化 ----
   // 工具栏可能在按需注入脚本后立刻发消息，因此打开面板前必须等待偏好加载完成。

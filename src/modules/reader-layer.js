@@ -154,14 +154,6 @@ window.INS_Reader = window.INS_Reader || {};
         background: ${theme.accent};
         transition: width 0.1s linear;
       }
-      .ins-reader-time {
-        position: sticky; top: 3px; z-index: 2;
-        text-align: right;
-        padding: 6px 24px 0;
-        font-size: 12px;
-        color: ${theme.accent};
-        background: ${theme.bg};
-      }
       .ins-reader-article {
         max-width: ${maxWidth};
         margin: 0 auto;
@@ -206,12 +198,6 @@ window.INS_Reader = window.INS_Reader || {};
     progressTrack.appendChild(progressBar);
     overlay.appendChild(progressTrack);
 
-    const timeEl = document.createElement('div');
-    timeEl.className = 'ins-reader-time';
-    const totalMinutes = readingStats.estimateMinutes(clone.textContent || '');
-    timeEl.textContent = `预计阅读 ${readingStats.formatMinutes(totalMinutes)}`;
-    overlay.appendChild(timeEl);
-
     const articleWrap = document.createElement('div');
     articleWrap.className = 'ins-reader-article';
     if (state.summaryText) {
@@ -232,10 +218,6 @@ window.INS_Reader = window.INS_Reader || {};
         overlay.clientHeight
       );
       progressBar.style.width = `${progress * 100}%`;
-      const remaining = totalMinutes * (1 - progress);
-      timeEl.textContent = progress >= 0.98
-        ? '已读完'
-        : `剩余 ${readingStats.formatMinutes(remaining)}`;
     });
 
     // 克隆体是全新节点，之前落地的 AI 改写/高亮随旧克隆体一起消失了，

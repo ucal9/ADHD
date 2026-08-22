@@ -23,11 +23,36 @@ window.INS_Reader = window.INS_Reader || {};
     if (!isSinaPage()) return {};
     return {
       ads: ['.sinaads', '.article-content-left > .ad', '.right-side-ad'],
+      // 右栏整体包含阅读排行榜、评论排行榜、广告和视频推荐；按容器处理，避免重复计数。
       sidebar: ['.article-content-right', '.page-right-bar'],
-      comments: ['.blk-comment', '#bottom_sina_comment', '#read-comment'],
-      banners: ['.sina-header', '.nav-others', '#article-bottom'],
+      // 正文评论区，不包含右栏的评论排行榜（#read-comment）。
+      comments: ['#bottom_sina_comment', '.blk-comment'],
+      // 顶部横幅、站点导航、文章底部横幅和动态浮层。
+      banners: [
+        '.top-banner',
+        '#sina-header',
+        '.sina-header',
+        '.nav-others',
+        '#article-bottom',
+        '.sinaad-toolkit-box',
+        '.qrcode-modal',
+        '.modal-overlay',
+        '.modal-content',
+      ],
       marketing: ['.modal-content', '[id*="login"]', '[class*="login"]'],
-      blockAllVideos: ['.news-video-miaopai', '.img-video-box'],
+      // 视频/动画统一归入该分类，包含正文媒体和右侧视频推荐卡片。
+      blockAllVideos: [
+        '#article video',
+        '#article iframe[src*="video"]',
+        '#article iframe[src*="player"]',
+        '#article [class*="video-player"]',
+        '#article [class*="videoPlayer"]',
+        '#article [class*="article-video"]',
+        '#article [data-video]',
+        '#article [data-video-id]',
+        '.news-video-miaopai',
+        '.img-video-box',
+      ],
     };
   }
 
