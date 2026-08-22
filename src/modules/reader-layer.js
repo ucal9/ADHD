@@ -12,11 +12,6 @@
 window.INS_Reader = window.INS_Reader || {};
 
 (function () {
-  const THEMES = {
-    gentle: { bg: '#f7f7f3', text: '#242422', accent: '#187a6e' },
-    focus: { bg: '#20211f', text: '#ecede8', accent: '#83cfc0' },
-  };
-
   const state = {
     readerHost: null,
     articleSourceRoot: null, // 原页面中定位到的正文节点（只读，从不修改）
@@ -26,6 +21,7 @@ window.INS_Reader = window.INS_Reader || {};
     summaryText: '', // AI 摘要结果，由面板模块调用 aiClient 后写入
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()
     lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
+    pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
   };
 
   function INS_ensureReaderHost() {
@@ -40,6 +36,28 @@ window.INS_Reader = window.INS_Reader || {};
     state.readerHost.style.zIndex = '2147483646'; // 面板层 z-index 减 1，面板始终盖在阅读层之上
     document.documentElement.appendChild(state.readerHost);
     return state.readerHost;
+  }
+
+  // 暂停原页面里正在自动播放的视频/音频。这是全模块唯一会改动原页面运行状态的地方
+  // （不改 DOM 结构，只改播放状态 + 暂存 autoplay 属性），因为"自动播放"是播放器行为，
+  // 在克隆体上做任何处理都影响不到真实页面里那个正在出声的播放器。
+  // 所有改动都记在 state.pausedMedia 里，退出阅读模式时由 INS_restoreAutoplay() 原样还原。
+  function INS_pauseAutoplayMedia() {
+    document.querySelectorAll('video, audio').forEach((el) => {
+      const hadAutoplay = el.hasAttribute('autoplay');
+      if (!hadAutoplay && el.paused) return;
+      state.pausedMedia.push({ el, hadAutoplay, wasPlaying: !el.paused });
+      if (hadAutoplay) el.removeAttribute('autoplay');
+      if (!el.paused) el.pause();
+    });
+  }
+
+  function INS_restoreAutoplayMedia() {
+    state.pausedMedia.forEach(({ el, hadAutoplay, wasPlaying }) => {
+      if (hadAutoplay) el.setAttribute('autoplay', '');
+      if (wasPlaying) el.play().catch(() => {});
+    });
+    state.pausedMedia = [];
   }
 
   function INS_lockOriginalPage() {
@@ -74,12 +92,20 @@ window.INS_Reader = window.INS_Reader || {};
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = '';
 
-    // 克隆整个 body（而非只克隆正文节点），这样广告/侧边栏/评论等
-    // 与正文平级的干扰元素才能被降噪选择器命中。清理后再按路径
-    // 找回正文节点，只把这部分内容放进阅读层展示。
+    // 先记录正文节点在真实 DOM 中的下标路径，再克隆**整个 body**（而非只克隆正文节点）：
+    // 广告/侧边栏/评论等干扰元素与正文在 DOM 树中是平级关系，必须存在于克隆体里，
+    // 降噪选择器才能命中它们。克隆会产生全新的节点身份，因此清理完再用这条路径
+    // 在克隆体里重新定位出等价的正文节点。
     const path = domPath.getChildIndexPath(sourceNode, document.body);
     const bodyClone = document.body.cloneNode(true);
     state.hiddenCount = noiseFilter.stripNoiseFromClone(bodyClone);
+
+    // 自动播放的暂停必须作用于原页面（克隆体里的播放器不会发声），因此单独处理
+    if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
+      INS_pauseAutoplayMedia();
+    } else {
+      INS_restoreAutoplayMedia();
+    }
     if (typeof state.onHiddenCountChange === 'function') {
       state.onHiddenCountChange(state.hiddenCount);
     }
@@ -87,10 +113,17 @@ window.INS_Reader = window.INS_Reader || {};
     const clone = (path && domPath.resolveChildIndexPath(bodyClone, path)) || bodyClone;
     state.articleText = clone.textContent || '';
 
-    const theme = prefs.theme === 'custom'
-      ? { ...prefs.customColors, accent: '#278477' }
-      : (THEMES[prefs.theme] || THEMES.gentle);
+    const theme = { ...prefs.customColors, accent: '#278477' };
     const maxWidth = prefs.contentWidth === 'narrow' ? '640px' : '900px';
+
+    // 字体映射
+    const fontFamilyMap = {
+      default: '"Noto Sans SC", -apple-system, sans-serif',
+      serif: '"Noto Serif SC", serif',
+      'sans-serif': '"Noto Sans SC", -apple-system, sans-serif',
+      monospace: '"Noto Sans Mono", monospace',
+    };
+    const fontFamily = fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
 
     const style = document.createElement('style');
     style.textContent = `
@@ -98,7 +131,7 @@ window.INS_Reader = window.INS_Reader || {};
         position: fixed; inset: 0; z-index: 1;
         background: ${theme.bg};
         overflow-y: auto;
-        font-family: "Noto Sans SC", -apple-system, sans-serif;
+        font-family: ${fontFamily};
       }
       .ins-reader-progress-track {
         position: sticky; top: 0; z-index: 2;
@@ -127,6 +160,9 @@ window.INS_Reader = window.INS_Reader || {};
         font-size: ${prefs.fontSize}px;
         line-height: ${prefs.lineHeight};
         letter-spacing: ${prefs.letterSpacing}em;
+      }
+      .ins-reader-article p {
+        margin-bottom: ${prefs.paragraphSpacing}em;
       }
       .ins-reader-article a { color: ${theme.accent}; }
       .ins-reader-article img { max-width: 100%; height: auto; }
@@ -195,6 +231,7 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_remove() {
+    INS_restoreAutoplayMedia();
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;

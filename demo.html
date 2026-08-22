@@ -72,6 +72,25 @@
   footer.fake-footer {
     background: #1e2723; color: #97a29c; padding: 30px 48px; font-size: 12px; grid-column: 1 / -1;
   }
+
+  /* ---- 正文内的干扰元素：与正文平级的横幅/侧栏/页脚不会出现在阅读层里，
+     这些放在 main.article 内部，才能演示对应降噪开关的实际效果 ---- */
+  main.article .ad-block.advert-inline {
+    margin: 10px 0 22px; padding: 14px; background: #e9e6d9; color: #5a5547; font-size: 13px; line-height: 1.6;
+  }
+  main.article aside.fake-sidebar-inline {
+    margin: 0 0 22px; padding: 14px 16px; background: #f2f6f4; border: 1px solid #e2e9e5; font-size: 13px; color: #56625c;
+  }
+  main.article aside.fake-sidebar-inline h4 { margin: 0 0 6px; font-size: 12px; color: #6a756e; }
+  main.article .vip-mask {
+    margin: 0 0 22px; padding: 16px; background: #fff4e9; border: 1px dashed #d9a35b; color: #8a5a1f; font-size: 13px;
+  }
+  main.article .vip-mask a { color: #b9601c; text-decoration: underline; }
+  main.article .video-player-wrap { margin: 0 0 22px; }
+  main.article .video-caption { font-size: 12px; color: #7c8580; margin: 0 0 8px; }
+  main.article .fake-video-player {
+    width: 100%; max-width: 420px; height: 200px; background: #101512; display: block; border-radius: 4px;
+  }
 </style>
 </head>
 <body>
@@ -102,13 +121,31 @@
       <h1>为什么"无干扰阅读"正在成为新的产品设计趋势</h1>
       <p class="byline">作者：编辑部 · 5 分钟阅读</p>
 
+      <aside class="fake-sidebar-inline">
+        <h4>本文导读</h4>
+        <p>① 无干扰阅读趋势　② 技术实现　③ Demo 演示</p>
+      </aside>
+
       <p>过去十年，互联网内容平台在商业化压力下不断堆叠推荐位、悬浮广告、订阅弹窗与社交分享按钮，用户的注意力被切割得越来越碎。对于注意力容易被打断的用户（例如 ADHD 群体）来说，这种"信息过载"的网页设计几乎是不友好的。</p>
+
+      <div class="ad-block advert-inline">
+        <em>广告</em>——某某效率工具限时 5 折，立即抢购 »
+      </div>
 
       <p>"INS_Reader"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
 
+      <div class="vip-mask">
+        🔒 登录后可继续阅读全文，<a href="#">立即登录 / 开通会员</a>
+      </div>
+
       <p>技术实现上，正文识别通常借助 Mozilla 开源的 Readability.js（Firefox 阅读模式同款算法），通过文本密度、链接密度、DOM 结构等特征打分，定位出页面中"最像正文"的区块。而干扰元素的识别，则可以用一组启发式规则——常见的广告、侧边栏、评论区、弹窗横幅在类名、标签语义上都有较强的规律性，可以在不依赖机器学习的情况下达到不错的准确率。</p>
 
-      <p>本 Demo 页面故意包含了顶部促销横幅、左侧广告栏、右侧推荐视频卡片与底部评论区，用来直观演示"降噪"功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
+      <div class="video-player-wrap">
+        <p class="video-caption">▶ 文章配图视频（自动播放示例，静音循环）</p>
+        <video id="demo-autoplay-video" class="fake-video-player" autoplay muted loop playsinline></video>
+      </div>
+
+      <p>本 Demo 页面故意包含了顶部促销横幅、正文内广告、导读侧栏、会员登录墙、自动播放视频、右侧推荐卡片与底部评论区，用来直观演示"降噪"功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
 
       <div class="related-recommend">
         <h4>相关推荐</h4>
@@ -240,6 +277,34 @@
     document.getElementById('open-panel-btn').addEventListener('click', () => {
       window.chrome.runtime.onMessage._dispatch({ type: 'INS_READER_TOGGLE_PANEL' });
     });
+  </script>
+
+  <!-- ---- 用 canvas.captureStream() 现场生成一段会动的画面喂给 <video autoplay>，
+       不依赖任何外部视频资源，用来演示"暂停自动播放"/"屏蔽所有视频"两个降噪开关 ---- -->
+  <script>
+    (function () {
+      const video = document.getElementById('demo-autoplay-video');
+      const canvas = document.createElement('canvas');
+      canvas.width = 420;
+      canvas.height = 200;
+      const ctx = canvas.getContext('2d');
+      let t = 0;
+      setInterval(() => {
+        t += 1;
+        ctx.fillStyle = '#101512';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const x = 60 + (Math.sin(t / 20) * 0.5 + 0.5) * (canvas.width - 120);
+        ctx.fillStyle = '#83cfc0';
+        ctx.beginPath();
+        ctx.arc(x, canvas.height / 2, 24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#5a6a64';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('DEMO AUTOPLAY VIDEO', 14, 22);
+      }, 1000 / 30);
+      video.srcObject = canvas.captureStream(30);
+      video.play().catch(() => {});
+    })();
   </script>
 </body>
 </html>

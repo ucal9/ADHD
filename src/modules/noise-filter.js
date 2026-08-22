@@ -16,6 +16,9 @@ window.INS_Reader = window.INS_Reader || {};
     // 会员/登录墙推销 UI：常见于 CSDN、掘金等技术博客站——蒙层遮挡正文、
     // 求关注/求登录浮层、VIP 购买卡片，混在正文容器内部而非平级兄弟节点。
     marketing: ['[class*="vip-mask"]', '[class*="mask-dark"]', '[class*="article-vip"]', '[class*="openvippay"]', '[class*="unlogin"]', '[class*="login-mask"]'],
+    // 屏蔽所有视频：把视频容器整体从克隆体里摘掉。标注为"可能存在风险"是因为
+    // 部分站点的正文本身就是视频（教程/评测），全屏蔽后阅读层可能空掉，故默认关闭。
+    blockAllVideos: ['video', 'iframe[src*="youtube"]', 'iframe[src*="bilibili"]', 'iframe[src*="vimeo"]', 'iframe[src*="player"]', '[class*="video-player"]', '[class*="videoPlayer"]'],
   };
 
   function INS_activeSelectors() {

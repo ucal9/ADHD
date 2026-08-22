@@ -15,12 +15,30 @@
     }
     .brand { font-size: 18px; font-weight: 700; color: #21463f; margin-bottom: 4px; }
     .tagline { font-size: 11px; color: #287e72; margin: 0 0 14px; }
-    button.primary {
-      width: 100%; height: 34px; border: 0; border-radius: 5px;
-      background: #1f8b7d; color: #fff; font-size: 13px; font-weight: 600;
-      cursor: pointer;
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0;
     }
-    button.primary:hover { background: #197c6e; }
+    .row span { font-size: 13px; }
+    .switch {
+      width: 38px; height: 22px; border-radius: 11px; border: 0;
+      background: #d8ddd9; position: relative; cursor: pointer; padding: 0;
+      transition: background 0.15s;
+    }
+    .switch span {
+      position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+      border-radius: 50%; background: #fff; transition: left 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    .switch.on { background: #1f8b7d; }
+    .switch.on span { left: 18px; }
+    .presets-title { font-size: 11px; color: #8a948e; margin: 10px 0 6px; }
+    .presets-list { display: flex; flex-direction: column; gap: 4px; }
+    button.preset-btn {
+      width: 100%; height: 28px; border: 1px solid #d8ddd9; border-radius: 5px;
+      background: #fff; color: #33403a; font-size: 12px; cursor: pointer;
+    }
+    button.preset-btn:hover { background: #f2f6f4; }
     .hint {
       margin-top: 10px; font-size: 10px; color: #7b8680; line-height: 1.6;
     }
@@ -32,8 +50,20 @@
 <body>
   <div class="brand">INS_Reader</div>
   <p class="tagline">把阅读调成适合你的样子</p>
-  <button class="primary" id="toggle-btn">打开阅读面板</button>
-  <p class="hint">在支持的网页上点击此按钮，或直接点击工具栏图标。</p>
+
+  <div class="row">
+    <span>一键降噪</span>
+    <button class="switch" id="enabled-switch" aria-label="一键降噪"><span></span></button>
+  </div>
+
+  <div id="presets-section" style="display:none;">
+    <p class="presets-title">我的预设</p>
+    <div class="presets-list" id="presets-list"></div>
+  </div>
+
+  <button class="preset-btn" id="expand-btn" style="margin-top:10px;">详细配置</button>
+
+  <p class="hint">在支持的网页上点击此开关。</p>
   <p class="unsupported" id="unsupported-hint">当前页面（如浏览器内置页）不支持 INS_Reader。</p>
   <script src="popup.js"></script>
 </body>
