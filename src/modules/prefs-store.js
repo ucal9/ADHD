@@ -10,15 +10,32 @@ window.INS_Reader = window.INS_Reader || {};
 
   const DEFAULT_PREFS = {
     enabled: false,
-    theme: 'gentle', // gentle | focus | custom
     fontSize: 18,
     lineHeight: 1.8,
+    paragraphSpacing: 1.2, // 新增：段落间距倍数 (1.0–2.0)
     letterSpacing: 0,
+    fontFamily: 'default', // 新增：default | serif | sans-serif | monospace
     contentWidth: 'wide', // wide | narrow
     noiseReduction: true,
-    noiseOptions: { ads: true, sidebar: true, comments: true, banners: true, marketing: true },
+    noiseOptions: {
+      ads: true,
+      sidebar: true,
+      comments: true,
+      banners: true,
+      marketing: true,
+      pauseAutoplay: true, // 视频动画：暂停自动播放（作用于原页面媒体元素，不删节点）
+      blockAllVideos: false, // 屏蔽所有视频：默认关闭，可能连正文视频一起屏蔽
+    },
     customColors: { bg: '#fbfcfa', text: '#3b4540' },
-    aiEnabled: false,
+    aiEnabled: false, // AI 内容助手模块总开关（展示在一级入口界面）
+    aiSummary: true, // 二级细分开关：AI 摘要
+    aiHighlight: { // 二级细分开关：高亮，及其三个子功能
+      enabled: false,
+      breakLongParagraphs: false,
+      simplifySentences: false,
+      markKeyInfo: false,
+    },
+    presets: [], // 新增：预设数组，每项 { name, timestamp, prefs }
     deviceId: '', // 首次 load() 时生成并持久化，用于后端限流，不含任何身份信息
   };
 
@@ -33,6 +50,7 @@ window.INS_Reader = window.INS_Reader || {};
           ...stored,
           noiseOptions: { ...DEFAULT_PREFS.noiseOptions, ...(stored.noiseOptions || {}) },
           customColors: { ...DEFAULT_PREFS.customColors, ...(stored.customColors || {}) },
+          aiHighlight: { ...DEFAULT_PREFS.aiHighlight, ...(stored.aiHighlight || {}) },
         };
         if (!state.prefs.deviceId) {
           state.prefs.deviceId = crypto.randomUUID();
