@@ -17,9 +17,20 @@ window.INS_Reader = window.INS_Reader || {};
     // 会员/登录墙推销 UI：常见于 CSDN、掘金等技术博客站——蒙层遮挡正文、
     // 求关注/求登录浮层、VIP 购买卡片，混在正文容器内部而非平级兄弟节点。
     marketing: ['[class*="vip-mask"]', '[class*="mask-dark"]', '[class*="article-vip"]', '[class*="openvippay"]', '[class*="unlogin"]', '[class*="login-mask"]'],
-    // 屏蔽视频动画：把视频容器整体从克隆体里摘掉。部分站点的正文本身就是视频
-    // （教程/评测），全屏蔽后阅读层可能为空，因此仍由用户自行控制该选项。
-    blockAllVideos: ['video', 'iframe[src*="youtube"]', 'iframe[src*="bilibili"]', 'iframe[src*="vimeo"]', 'iframe[src*="player"]', '[class*="video-player"]', '[class*="videoPlayer"]'],
+    // 屏蔽视频、动画和图片：媒体标签与常见播放器壳一起摘掉，再向上收空壳，
+    // 避免封面图/固定高度容器留下空白。正文配图也去掉，由用户自行控制该选项。
+    blockAllVideos: [
+      'video',
+      'img',
+      'picture',
+      'canvas',
+      'iframe[src*="youtube"]',
+      'iframe[src*="bilibili"]',
+      'iframe[src*="vimeo"]',
+      'iframe[src*="player"]',
+      '[class*="video-player"]',
+      '[class*="videoPlayer"]',
+    ],
   };
 
   // 面板上四个细分开关。只有它们全部开启时，阅读层才从整页克隆收成正文。
@@ -62,17 +73,125 @@ window.INS_Reader = window.INS_Reader || {};
       );
   }
 
+  function INS_protectList(protectRoot) {
+    if (!protectRoot) return [];
+    return Array.isArray(protectRoot) ? protectRoot.filter(Boolean) : [protectRoot];
+  }
+
   function INS_isProtected(el, protectRoot) {
-    if (!protectRoot || !el) return false;
-    if (el === protectRoot) return true;
-    // 正文的祖先不能删：删掉会把正文一起带走，阅读层变白。
-    return el.contains(protectRoot);
+    if (!el) return false;
+    for (const root of INS_protectList(protectRoot)) {
+      if (el === root) return true;
+      // 正文/标题的祖先不能删：删掉会把它们一起带走。
+      if (el.contains(root)) return true;
+    }
+    return false;
+  }
+
+  const IGNORE_EMPTY_TAGS = { SCRIPT: 1, STYLE: 1, LINK: 1, NOSCRIPT: 1, META: 1, BR: 1, SOURCE: 1, TRACK: 1 };
+  const SUBSTANCE_TAGS = {
+    IFRAME: 1,
+    OBJECT: 1,
+    EMBED: 1,
+    INPUT: 1,
+    TEXTAREA: 1,
+    SELECT: 1,
+    BUTTON: 1,
+    HR: 1,
+    TABLE: 1,
+    SVG: 1,
+    VIDEO: 1,
+    AUDIO: 1,
+    IMG: 1,
+    CANVAS: 1,
+    PICTURE: 1,
+  };
+
+  function INS_isIgnorableShellNode(el) {
+    return !el || el.nodeType !== 1 || IGNORE_EMPTY_TAGS[el.tagName] === 1;
+  }
+
+  // 判断节点在隐藏若干子节点后是否还剩可见文字或未隐藏内容。
+  // hideAttr 为 null 时只看当前 DOM（克隆体里被删掉的节点已经不在树上）。
+  function INS_hasVisibleSubstance(el, hideAttr) {
+    if (!el) return false;
+    if (el.nodeType === 1) {
+      if (hideAttr && el.hasAttribute(hideAttr)) return false;
+      if (INS_isIgnorableShellNode(el)) return false;
+      if (INS_isExtensionHost(el)) return false;
+      if (SUBSTANCE_TAGS[el.tagName] === 1) return true;
+    }
+    const children = el.childNodes;
+    for (let i = 0; i < children.length; i += 1) {
+      const child = children[i];
+      if (child.nodeType === 3) {
+        if (child.textContent && child.textContent.trim()) return true;
+      } else if (child.nodeType === 1) {
+        if (INS_hasVisibleSubstance(child, hideAttr)) return true;
+      }
+    }
+    return false;
+  }
+
+  // 真实页：从已隐藏的媒体节点向上，把只剩空壳的包装也 display:none，让后文回流。
+  function INS_collapseEmptyAncestors(starts, protectRoot, category) {
+    const hideAttr = LIVE_HIDE_ATTR;
+    const queued = [];
+    const seen = new Set();
+    for (const el of starts) {
+      if (el && el.parentElement) queued.push(el.parentElement);
+    }
+    while (queued.length) {
+      const parent = queued.shift();
+      if (!parent || seen.has(parent)) continue;
+      seen.add(parent);
+      if (parent === document.body || parent === document.documentElement) continue;
+      if (INS_isExtensionHost(parent) || INS_isProtected(parent, protectRoot)) continue;
+      if (INS_hasVisibleSubstance(parent, hideAttr)) continue;
+      parent.setAttribute(hideAttr, category);
+      if (parent.parentElement) queued.push(parent.parentElement);
+    }
+  }
+
+  // 克隆体：从深到浅摘掉已经没有实质内容的空壳，避免固定高度容器留白。
+  function INS_collapseEmptyInClone(cloneRoot, protectRoot) {
+    if (!cloneRoot || !cloneRoot.querySelectorAll) return;
+    const nodes = Array.from(
+      cloneRoot.querySelectorAll('div, p, figure, picture, section, span, a, li, header, aside, article')
+    );
+    for (let i = nodes.length - 1; i >= 0; i -= 1) {
+      const el = nodes[i];
+      if (!el.parentNode) continue;
+      if (INS_isProtected(el, protectRoot)) continue;
+      if (INS_hasVisibleSubstance(el, null)) continue;
+      el.remove();
+    }
   }
 
   function INS_isExtensionHost(el) {
     if (!el || el.nodeType !== 1) return false;
     const id = el.id;
     return id === 'ins-reader-host' || id === 'ins-reader-panel-host' || id === 'ins-reader-ai-card-host';
+  }
+
+  function INS_enabledCategories(prefs) {
+    return new Set(INS_activeRules(prefs).map((rule) => rule.category));
+  }
+
+  function INS_eachExtraSiteNode(root, prefs, protectRoot, visit) {
+    const finder = window.INS_Reader.siteAdapters?.findExtraNoiseNodes;
+    if (typeof finder !== 'function' || !root) return 0;
+    let count = 0;
+    INS_enabledCategories(prefs).forEach((category) => {
+      const nodes = finder(root, category) || [];
+      nodes.forEach((el) => {
+        if (!el) return;
+        if (INS_isProtected(el, protectRoot)) return;
+        visit(el, category);
+        count += 1;
+      });
+    });
+    return count;
   }
 
   // 返回移除的元素数量。cloneRoot 必须是克隆体，绝不作用于原始 DOM。
@@ -100,6 +219,10 @@ window.INS_Reader = window.INS_Reader || {};
         count += 1;
       });
     }
+    count += INS_eachExtraSiteNode(cloneRoot, prefs, protectRoot, (el) => {
+      if (el.parentNode) el.remove();
+    });
+    INS_collapseEmptyInClone(cloneRoot, protectRoot);
     return count;
   }
 
@@ -155,6 +278,7 @@ window.INS_Reader = window.INS_Reader || {};
       return 0;
     }
     const cssSelectors = [];
+    const mediaStarts = [];
     let count = 0;
     for (const { selector, category } of INS_activeRules(prefs)) {
       let elements;
@@ -174,9 +298,16 @@ window.INS_Reader = window.INS_Reader || {};
         if (INS_isExtensionHost(el) || INS_isProtected(el, protectRoot)) return;
         if (el.closest('#ins-reader-host, #ins-reader-panel-host, #ins-reader-ai-card-host')) return;
         el.setAttribute(LIVE_HIDE_ATTR, category);
+        if (category === 'blockAllVideos') mediaStarts.push(el);
         count += 1;
       });
     }
+    INS_collapseEmptyAncestors(mediaStarts, protectRoot, 'blockAllVideos');
+    count += INS_eachExtraSiteNode(document.body, prefs, protectRoot, (el, category) => {
+      if (INS_isExtensionHost(el)) return;
+      if (el.closest('#ins-reader-host, #ins-reader-panel-host, #ins-reader-ai-card-host')) return;
+      el.setAttribute(LIVE_HIDE_ATTR, category);
+    });
     INS_setLiveHideCss(cssSelectors);
     return count;
   }

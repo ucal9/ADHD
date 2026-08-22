@@ -25,7 +25,7 @@ window.INS_Reader = window.INS_Reader || {};
       banners: true,
       marketing: true,
       pauseAutoplay: true, // 视频动画：暂停自动播放（作用于原页面媒体元素，不删节点）
-      blockAllVideos: true, // 严格默认模式：所有降噪选项开启
+      blockAllVideos: true, // 屏蔽视频、动画和图片（含正文配图）
     },
     customColors: { bg: '#fbfcfa', text: '#3b4540' },
     aiEnabled: true, // 严格默认模式开启 AI 内容助手，但不会自动发送正文

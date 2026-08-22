@@ -1,6 +1,7 @@
 # 缓读插件版本
 
-- `calmread-chrome-extension-0.2.7-fullpage-noise.zip`：当前版本。动态降噪未全开时作用在真实页面上（不拆节点，保留原布局）；四个细分开关全开时才进入正文阅读层。关闭「隐藏侧边栏」等开关后，对应区块回到原来的位置。
+- `calmread-chrome-extension-0.2.8-headline-media.zip`：当前版本。四开关全开时阅读层保留标题和日期来源，作者与日期同一行；「屏蔽视频、动画和图片」会去掉配图/视频壳并让后文补位；文末「特别声明」归入隐藏弹窗横幅。
+- `calmread-chrome-extension-0.2.7-fullpage-noise.zip`：上一版参考。动态降噪未全开时作用在真实页面上（不拆节点，保留原布局）；四个细分开关全开时才进入正文阅读层。
 - `calmread-chrome-extension-0.2.6-noise-video-scope.zip`：上一版参考。调整新浪动态降噪范围，视频动画同时覆盖正文和右侧视频推荐，并移除阅读层剩余时间显示。
 
 - `calmread-chrome-extension-0.2.4-ui-polish.zip`：上一版 UI 参考。在 0.2.3 直达入口基础上更新启用态 Icon、浅黄色预设选中态、预设胶囊布局和入口面板文案。

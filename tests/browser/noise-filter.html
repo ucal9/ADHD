@@ -12,7 +12,8 @@
   #page-sidebar { width: 180px; flex: 0 0 180px; }
   .modal-overlay { display: none; position: fixed; inset: 0; background: #fff; }
   #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; margin: 16px; border-radius: 6px; }
-  video { width: 0; height: 0; }
+  .video-2017 { min-height: 360px; background: #ddd; }
+  .video-2017 img { display: block; height: 360px; width: 100%; }
 </style>
 </head>
 <body>
@@ -21,6 +22,13 @@
     顶部二维码
   </header>
   <div class="modal-overlay" id="hidden-overlay">原页隐藏的蒙层</div>
+  <h1 class="main-title" id="article-title">测试标题不能消失</h1>
+  <div class="date-source" id="article-meta">
+    <span class="date">2026年08月23日 17:38</span>
+    <span class="source">人民日报</span>
+    <p class="author">作者：<a href="#">科技播报站</a></p>
+    <img class="avatar-img" id="meta-avatar" alt="avatar" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+  </div>
   <div class="layout">
     <article id="article">
       <p>
@@ -30,7 +38,14 @@
         为了让测试页的正文长度稳定超过可行性阈值，这里再补一段说明：降噪作用在整份页面克隆上，
         每个按钮对应一类节点，关总开关时整页原样保留，开总开关但未全开细分时只删除已开启的类别。
       </p>
-      <video id="article-video" width="0" height="0" style="width:0;height:0"></video>
+      <div class="video-2017" id="video-shell">
+        <img id="poster" alt="封面" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+        <video id="article-video" width="0" height="0" style="width:0;height:0"></video>
+      </div>
+      <p id="after-video">这段文字应在视频壳隐藏后上移，不能再空出封面图的位置。</p>
+      <p id="photo-wrap"><img id="inline-photo" alt="配图" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /></p>
+      <p id="after-photo">配图后的段落应随配图消失而补上。</p>
+      <p id="disclaimer">特别声明：以上文章内容仅代表作者本人观点，不代表新浪网观点或立场。如有关于作品内容、版权或其它问题请于作品发表后的30日内与新浪网联系。</p>
     </article>
     <aside class="article-content-right sidebar" id="page-sidebar">右侧推荐</aside>
   </div>
@@ -70,12 +85,22 @@
     isSinaPage: () => true,
     findArticleRoot: () => document.getElementById('article'),
     findArticleRootIn: (root) => root.querySelector('#article'),
+    findHeadline: (root) => ({
+      title: root.querySelector('h1.main-title, .main-title'),
+      meta: root.querySelector('.date-source'),
+    }),
     getNoiseSelectors: () => ({
       sidebar: ['.article-content-right', '.page-right-bar'],
       comments: ['#bottom_sina_comment', '.blk-comment'],
-      banners: ['.top-banner', '[class*="qrcode"]', '.modal-overlay'],
-      blockAllVideos: ['.img-video-box', '#article-bottom', '.article-bottom'],
+      banners: ['.top-banner', '[class*="qrcode"]', '.modal-overlay', '.show_author'],
+      blockAllVideos: ['.video-2017', '.img-video-box', '#article-bottom', '.article-bottom'],
     }),
+    findExtraNoiseNodes: (root, category) => {
+      if (category !== 'banners' || !root?.querySelectorAll) return [];
+      return Array.from(root.querySelectorAll('p')).filter((el) =>
+        (el.textContent || '').replace(/\s+/g, '').startsWith('特别声明')
+      );
+    },
   };
   window.INS_Reader.articleLocator.findArticleRoot = () => document.getElementById('article');
   window.INS_Reader.articleLocator.findArticleRootIn = (root) => root.querySelector('#article');
@@ -114,6 +139,18 @@
   check('全开后阅读层没有顶部二维码', !inLayer('#qr-area'));
   check('全开后仍有正文', !!inLayer('#article') || readerLayer.getRenderedArticle()?.id === 'article');
   check('全开时 AI 落点仍是正文节点', readerLayer.getRenderedArticle()?.id === 'article');
+  const headlineText = inLayer('.ins-reader-headline')?.textContent || '';
+  check('全开后阅读层有标题', headlineText.includes('测试标题不能消失'));
+  check('全开后阅读层有日期来源', headlineText.includes('2026年08月23日') && headlineText.includes('人民日报'));
+  const authorEl = inLayer('.ins-reader-headline .author');
+  const dateEl = inLayer('.ins-reader-headline .date');
+  check('全开后阅读层有作者', (authorEl?.textContent || '').includes('科技播报站'));
+  check(
+    '全开后作者不另起一行',
+    !!(dateEl && authorEl && Math.abs(dateEl.getBoundingClientRect().top - authorEl.getBoundingClientRect().top) < 4)
+  );
+  check('全开后阅读层没有文末特别声明', !inLayer('#disclaimer'));
+  check('全开后原页标题节点仍在', !!document.getElementById('article-title'));
 
   // ---- 关掉横幅：回到真实页面，布局保持 ----
   applyNoise({ sidebar: true, comments: true, banners: false, videos: true });
@@ -132,26 +169,45 @@
   check('只开横幅后侧栏仍在正文右侧', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
   check('只开横幅后评论仍在', isLiveShown('bottom_sina_comment'));
   check('只开横幅后正文视频仍在', isLiveShown('article-video'));
+  check('只开横幅后文末特别声明被隐藏', isLiveHidden('disclaimer'));
 
   // ---- 只开侧栏 / 评论 / 视频 ----
   applyNoise({ sidebar: true, comments: false, banners: false, videos: false });
   check('只开侧栏后侧栏被隐藏', isLiveHidden('page-sidebar'));
   check('只开侧栏后侧栏节点仍在原父级', document.getElementById('page-sidebar').parentElement.classList.contains('layout'));
   check('只开侧栏后二维码仍在', isLiveShown('qr-area'));
+  check('只开侧栏后特别声明仍在', isLiveShown('disclaimer'));
 
   applyNoise({ sidebar: false, comments: true, banners: false, videos: false });
   check('只开评论后评论被隐藏', isLiveHidden('bottom_sina_comment'));
   check('只开评论后侧栏仍在原位', isLiveShown('page-sidebar') && document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
 
+  applyNoise({ sidebar: false, comments: false, banners: false, videos: false });
+  const afterVideoTop = document.getElementById('after-video').offsetTop;
+  const afterPhotoTop = document.getElementById('after-photo').offsetTop;
+  check('关闭媒体时视频壳仍占位', document.getElementById('video-shell').offsetHeight >= 360);
+  check('关闭媒体时标题仍在', isLiveShown('article-title'));
+  check('关闭媒体时日期来源仍在', isLiveShown('article-meta'));
+
   applyNoise({ sidebar: false, comments: false, banners: false, videos: true });
-  check('只开视频后正文 video 被隐藏', isLiveHidden('article-video'));
-  check('只开视频后右栏视频卡片被隐藏', isLiveHidden('side-video'));
-  check('只开视频后底部图示被隐藏', isLiveHidden('article-bottom'));
-  check('只开视频后侧栏仍在原位', isLiveShown('page-sidebar') && document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
-  check('只开视频后底部图示节点仍在原位', document.getElementById('article-bottom').parentElement === document.body);
+  check('只开媒体后正文 video 被隐藏', isLiveHidden('article-video'));
+  check('只开媒体后封面图被隐藏', isLiveHidden('poster'));
+  check('只开媒体后视频壳被收起', isLiveHidden('video-shell'));
+  check('只开媒体后配图被隐藏', isLiveHidden('inline-photo'));
+  check('只开媒体后右栏视频卡片被隐藏', isLiveHidden('side-video'));
+  check('只开媒体后底部图示被隐藏', isLiveHidden('article-bottom'));
+  check('只开媒体后标题仍在', isLiveShown('article-title'));
+  check('只开媒体后日期来源仍在', isLiveShown('article-meta'));
+  check('只开媒体后作者头像被隐藏', isLiveHidden('meta-avatar'));
+  check('只开媒体后视频下文上移', document.getElementById('after-video').offsetTop < afterVideoTop);
+  check('只开媒体后配图下文上移', document.getElementById('after-photo').offsetTop < afterPhotoTop);
+  check('只开媒体后侧栏仍在原位', isLiveShown('page-sidebar') && document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
+  check('只开媒体后底部图示节点仍在原位', document.getElementById('article-bottom').parentElement === document.body);
 
   applyNoise({ sidebar: false, comments: false, banners: true, videos: false });
   check('只开横幅时底部图示不被视频规则误伤', isLiveShown('article-bottom'));
+  check('只开横幅后标题仍在', isLiveShown('article-title'));
+  check('只开横幅后日期来源仍在', isLiveShown('article-meta'));
 
   // ---- 总开关关闭：真实页面全部还原 ----
   applyNoise({ master: false, sidebar: true, comments: true, banners: true, videos: true });
@@ -159,8 +215,11 @@
   check('总开关关闭后侧栏还原', isLiveShown('page-sidebar'));
   check('总开关关闭后二维码还原', isLiveShown('qr-area'));
   check('总开关关闭后评论还原', isLiveShown('bottom_sina_comment'));
-  check('总开关关闭后视频还原', isLiveShown('article-video') && isLiveShown('side-video'));
+  check('总开关关闭后视频还原', isLiveShown('article-video') && isLiveShown('side-video') && isLiveShown('video-shell'));
+  check('总开关关闭后配图还原', isLiveShown('inline-photo'));
+  check('总开关关闭后标题仍在', isLiveShown('article-title') && isLiveShown('article-meta'));
   check('总开关关闭后底部图示还原', isLiveShown('article-bottom'));
+  check('总开关关闭后特别声明还原', isLiveShown('disclaimer'));
   check('总开关关闭后侧栏仍在正文旁', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
 
   document.getElementById('log').textContent = out.join('\n') +

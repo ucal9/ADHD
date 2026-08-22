@@ -141,11 +141,66 @@ window.INS_Reader = window.INS_Reader || {};
     }
   }
 
+  function INS_protectRoots(sourceNode, scope) {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(scope || document);
+    return [sourceNode, title, meta].filter(Boolean);
+  }
+
+  function INS_headingAlreadyPresent(mountedArticle, sourceEl) {
+    if (!mountedArticle || !sourceEl) return false;
+    const text = (sourceEl.textContent || '').trim();
+    if (!text) return false;
+    return Array.from(mountedArticle.querySelectorAll('h1, h2, .main-title')).some(
+      (el) => (el.textContent || '').trim() === text
+    );
+  }
+
+  function INS_metaAlreadyPresent(mountedArticle, sourceEl) {
+    if (!mountedArticle || !sourceEl) return false;
+    if (sourceEl.id) {
+      try {
+        const escaped = window.CSS && CSS.escape ? CSS.escape(sourceEl.id) : sourceEl.id;
+        if (mountedArticle.querySelector(`#${escaped}`)) return true;
+      } catch (error) {
+        // id 含特殊字符时改用文本比对。
+      }
+    }
+    const snippet = (sourceEl.textContent || '').trim().slice(0, 24);
+    return Boolean(snippet) && (mountedArticle.textContent || '').includes(snippet);
+  }
+
+  function INS_appendHeadline(articleWrap, mountedArticle) {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    if (!title && !meta) return;
+
+    const wrap = document.createElement('header');
+    wrap.className = 'ins-reader-headline';
+    if (title && !INS_headingAlreadyPresent(mountedArticle, title)) {
+      wrap.appendChild(title.cloneNode(true));
+    }
+    if (meta && !INS_metaAlreadyPresent(mountedArticle, meta)) {
+      const metaClone = meta.cloneNode(true);
+      metaClone.querySelectorAll('img, picture, video, iframe, canvas').forEach((node) => node.remove());
+      wrap.appendChild(metaClone);
+    }
+    if (!wrap.firstChild) return;
+    articleWrap.appendChild(wrap);
+  }
+
+  function INS_headlinePlainText() {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    return [title, meta]
+      .filter(Boolean)
+      .map((el) => (el.textContent || '').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
   function INS_renderLivePage(sourceNode, prefs) {
     const { noiseFilter } = window.INS_Reader;
     state.livePageMode = true;
     INS_teardownOverlay();
-    INS_setHiddenCount(noiseFilter.applyLiveHide(sourceNode));
+    INS_setHiddenCount(noiseFilter.applyLiveHide(INS_protectRoots(sourceNode)));
     INS_syncAutoplay(prefs);
     state.articleText = sourceNode.textContent || '';
     // 落点留在真实正文，aiEnhance 会走原页面分支而不是 Shadow。
@@ -186,13 +241,14 @@ window.INS_Reader = window.INS_Reader || {};
     const bodyClone = document.body.cloneNode(true);
     INS_copyHiddenComputedStyles(document.body, bodyClone);
     const articleClone = INS_resolveCloneArticle(bodyClone, sourceNode, path);
-    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone, articleClone));
+    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone, INS_protectRoots(articleClone, bodyClone)));
     INS_syncAutoplay(prefs);
 
     const pageClone = INS_unwrapBodyClone(bodyClone);
     const mountedArticle = articleClone && pageClone.contains(articleClone) ? articleClone : null;
     const clone = mountedArticle || pageClone;
-    state.articleText = (mountedArticle || clone).textContent || '';
+    const headlineText = INS_headlinePlainText();
+    state.articleText = [headlineText, (mountedArticle || clone).textContent || ''].filter(Boolean).join('\n');
     state.renderedArticle = mountedArticle || clone;
 
     const typographyEnabled = prefs.typographyEnabled !== false;
@@ -239,6 +295,50 @@ window.INS_Reader = window.INS_Reader || {};
       .ins-reader-article p {
         margin-bottom: ${typographyEnabled ? `${prefs.paragraphSpacing}em` : '1em'};
       }
+      .ins-reader-headline {
+        margin: 0 0 1.5em;
+      }
+      .ins-reader-headline h1,
+      .ins-reader-headline .main-title {
+        font-size: 1.5em;
+        font-weight: 700;
+        line-height: 1.35;
+        margin: 0 0 0.4em;
+        color: ${theme.text};
+      }
+      .ins-reader-headline .date-source,
+      .ins-reader-headline .article-info,
+      .ins-reader-headline .byline {
+        font-size: 0.82em;
+        line-height: 1.5;
+        opacity: 0.72;
+      }
+      /* 新浪 .date-source 里作者常用 <p class="author">，进阅读层后变成块级会在「作者」后换行。 */
+      .ins-reader-headline .date-source p,
+      .ins-reader-headline .date-source div,
+      .ins-reader-headline .date-source span,
+      .ins-reader-headline .date-source a,
+      .ins-reader-headline .article-info p,
+      .ins-reader-headline .article-info div,
+      .ins-reader-headline .byline p,
+      .ins-reader-headline .byline div {
+        display: inline;
+        margin: 0;
+        padding: 0;
+        float: none;
+        width: auto;
+      }
+      .ins-reader-headline .date-source br,
+      .ins-reader-headline .article-info br,
+      .ins-reader-headline .byline br {
+        display: none;
+      }
+      .ins-reader-headline img,
+      .ins-reader-headline picture,
+      .ins-reader-headline video,
+      .ins-reader-headline canvas {
+        display: none !important;
+      }
       .ins-reader-article a { color: ${theme.accent}; }
       .ins-reader-article img { max-width: 100%; height: auto; }
       .ins-reader-summary {
@@ -280,6 +380,7 @@ window.INS_Reader = window.INS_Reader || {};
       summaryEl.querySelector('.ins-reader-summary-body').textContent = state.summaryText;
       articleWrap.appendChild(summaryEl);
     }
+    INS_appendHeadline(articleWrap, mountedArticle);
     articleWrap.appendChild(clone);
     overlay.appendChild(articleWrap);
     shadow.appendChild(overlay);

@@ -23,6 +23,16 @@ window.INS_Reader = window.INS_Reader || {};
     return findArticleRootIn(document);
   }
 
+  function findHeadline(root) {
+    if (!isSinaPage() || !root || !root.querySelector) {
+      return { title: null, meta: null };
+    }
+    return {
+      title: root.querySelector('h1.main-title, .main-title'),
+      meta: root.querySelector('.date-source'),
+    };
+  }
+
   function getNoiseSelectors() {
     if (!isSinaPage()) return {};
     return {
@@ -46,12 +56,18 @@ window.INS_Reader = window.INS_Reader || {};
         '[class*="qr-code"]',
         '[class*="ewm"]',
         '.modal-overlay',
+        // 文末版权/立场免责声明，常在 #article 末尾，有时没有稳定 class。
+        '.show_author',
+        '.article-notice',
       ],
       marketing: ['.modal-content', '[id*="login"]', '[class*="login"]'],
-      // 与通用 video/iframe 规则合并：正文播放器、右栏视频卡，以及正文下方
-      // 动态插入的图示/广告墙（赛博对话等栏目卡、带「广告」标的图片网格）。
-      // 特别声明在 #article 内，不会被「#article 后面的兄弟」选中。
+      // 与通用 video/iframe/img 规则合并：正文播放器、封面图外壳、右栏视频卡，
+      // 以及正文下方动态插入的图示/广告墙。特别声明在 #article 内，
+      // 不会被「#article 后面的兄弟」选中。
       blockAllVideos: [
+        '.video-2017',
+        '[id^="videoList"]',
+        '.play-video-area',
         '[class*="article-video"]',
         '[data-video]',
         '[data-video-id]',
@@ -70,10 +86,26 @@ window.INS_Reader = window.INS_Reader || {};
     };
   }
 
+  // 选择器打不到的文末声明：按正文特征收进「隐藏弹窗横幅」。
+  function findExtraNoiseNodes(root, category) {
+    if (!isSinaPage() || category !== 'banners' || !root || !root.querySelectorAll) return [];
+    const matched = [];
+    root.querySelectorAll('p, div, span, section').forEach((el) => {
+      const text = (el.textContent || '').replace(/\s+/g, '');
+      if (!text.startsWith('特别声明')) return;
+      if (!text.includes('不代表新浪')) return;
+      if (text.length > 400) return;
+      matched.push(el);
+    });
+    return matched.filter((el) => !matched.some((other) => other !== el && el.contains(other)));
+  }
+
   window.INS_Reader.siteAdapters = {
     isSinaPage,
     findArticleRoot,
     findArticleRootIn,
+    findHeadline,
     getNoiseSelectors,
+    findExtraNoiseNodes,
   };
 })();
