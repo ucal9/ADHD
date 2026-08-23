@@ -235,6 +235,7 @@ window.INS_Reader = window.INS_Reader || {};
     pageOverviewStatus: '',
     pageOverviewError: '',
     expandedMenus: {}, // 保存各菜单的展开状态
+    aiPending: new Set(),
     outsidePointerHandler: null,
   };
 
@@ -280,6 +281,8 @@ window.INS_Reader = window.INS_Reader || {};
       return;
     }
 
+    state.aiPending.add(feature);
+    if (INS_isOpen()) INS_render();
     aiCard.showLoading(feature, feature === 'simplify' ? '正在改写段落…' : '正在提取重点…');
     try {
       if (feature === 'simplify') {
@@ -306,6 +309,9 @@ window.INS_Reader = window.INS_Reader || {};
       if (!prefsStore.anyAiFeatureOn(prefs)) prefs.aiEnabled = false;
       prefsStore.syncEnabled(prefs);
       prefsStore.save();
+      if (INS_isOpen()) INS_render();
+    } finally {
+      state.aiPending.delete(feature);
       if (INS_isOpen()) INS_render();
     }
   }
@@ -553,11 +559,11 @@ window.INS_Reader = window.INS_Reader || {};
 
               <div class="ai-row">
                 <span>简化段落长句</span>
-                <button class="${INS_switchClass({ on: !!(prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences), locked: aiLocked })}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句"><span></span></button>
+                <button class="${INS_switchClass({ on: !!(prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences), locked: aiLocked })}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句" ${state.aiPending.has('simplify') ? 'disabled' : ''}><span></span></button>
               </div>
               <div class="ai-row">
                 <span>高亮核心信息</span>
-                <button class="${INS_switchClass({ on: !!prefs.aiHighlight?.markKeyInfo, locked: aiLocked })}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息"><span></span></button>
+                <button class="${INS_switchClass({ on: !!prefs.aiHighlight?.markKeyInfo, locked: aiLocked })}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息" ${state.aiPending.has('keyinfo') ? 'disabled' : ''}><span></span></button>
               </div>
 
             `
@@ -817,6 +823,10 @@ window.INS_Reader = window.INS_Reader || {};
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const feature = btn.getAttribute('data-ai-feature');
+        // 旧面板节点上的快速连点事件仍可能继续执行，不能只依赖 disabled 属性。
+        const pendingFeature = feature === 'simplifyParagraphs' ? 'simplify' :
+          feature === 'markKeyInfo' ? 'keyinfo' : null;
+        if (pendingFeature && state.aiPending.has(pendingFeature)) return;
         INS_markCustomized(prefs);
         if (!prefs.aiEnabled) {
           if (feature === 'simplifyParagraphs') INS_setAiFeaturePref(prefs, 'simplify', true);
@@ -890,9 +900,11 @@ window.INS_Reader = window.INS_Reader || {};
         if (!articleText) {
           console.warn('[INS_Reader][panel-ui] 未找到正文内容，终止生成');
           if (statusEl) statusEl.textContent = '未找到正文内容';
+          window.INS_Reader.aiCard.showError('summary', '未找到正文内容');
           return;
         }
         generateBtn.disabled = true;
+        window.INS_Reader.aiCard.showLoading('summary', '正在生成摘要…');
         if (progressEl) progressEl.hidden = false;
         if (statusEl) statusEl.classList.remove('error');
 
@@ -913,6 +925,7 @@ window.INS_Reader = window.INS_Reader || {};
             resultLength: summary ? summary.length : 0,
           });
           readerLayer.setSummary(summary);
+          window.INS_Reader.aiCard.showSummary(summary);
           appController.applyAll();
           INS_render();
         } catch (err) {
@@ -926,6 +939,7 @@ window.INS_Reader = window.INS_Reader || {};
             statusEl.classList.add('error');
             statusEl.textContent = err.message || 'AI 摘要生成失败';
           }
+          window.INS_Reader.aiCard.showError('summary', err.message || 'AI 摘要生成失败');
           generateBtn.disabled = false;
           if (progressEl) progressEl.hidden = true;
         } finally {

@@ -201,8 +201,13 @@ window.INS_Reader = window.INS_Reader || {};
       console.error('[INS_Reader][ai-client] keyinfo 响应缺少 spans 数组', { data: resp.data });
       throw new Error('AI 服务返回格式异常');
     }
-    console.log('[INS_Reader][ai-client] 重点片段提取成功，数量:', spans.length);
-    return spans;
+    // 后端已约束短词组，前端再做一道轻量校验，避免模型偶尔返回整句造成大面积高亮。
+    const valid = spans
+      .map((span) => String(span).trim())
+      .filter((span) => span.length >= 3 && span.length <= 20)
+      .filter((span) => !/[，。！？；：、,.!?;:]/.test(span));
+    console.log('[INS_Reader][ai-client] 重点片段提取成功，数量:', valid.length);
+    return valid;
   }
 
   window.INS_Reader.aiClient = {

@@ -7,6 +7,7 @@ window.INS_Reader = window.INS_Reader || {};
 
 (function () {
   const SINA_HOSTS = ['sina.com.cn', 'sina.cn'];
+  const BAIKE_HOSTS = ['baike.baidu.com'];
 
   function isSinaPage() {
     return SINA_HOSTS.some(
@@ -14,8 +15,14 @@ window.INS_Reader = window.INS_Reader || {};
     );
   }
 
+  function isBaikePage() {
+    return BAIKE_HOSTS.includes(location.hostname);
+  }
+
   function findArticleRootIn(root) {
-    if (!isSinaPage() || !root || !root.querySelector) return null;
+    if (!root || !root.querySelector) return null;
+    if (isBaikePage()) return root.querySelector('.J-lemma-content');
+    if (!isSinaPage()) return null;
     return root.querySelector('#article, .article-content-left .article');
   }
 
@@ -34,6 +41,16 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function getNoiseSelectors() {
+    if (isBaikePage()) {
+      return {
+        // 百科正文使用 J-lemma-content；只隐藏明确的固定侧栏和推荐模块，
+        // 不使用通配的 .content/.wrapper，避免把正文章节一起隐藏。
+        sidebar: ['#J-side-catalog', '[class*="sideCatalog"]', '[class*="lemmaRight"]'],
+        comments: ['[class*="commentList"]', '[class*="commentPanel"]'],
+        banners: ['[class*="fixedWrapper"]', '[class*="recommend"]', '[class*="related"]'],
+        blockAllVideos: ['[class*="videoList"]', '[class*="videoCard"]', '[class*="videoWrap"]'],
+      };
+    }
     if (!isSinaPage()) return {};
     return {
       ads: ['.sinaads', '.article-content-left > .ad', '.right-side-ad'],
@@ -102,6 +119,7 @@ window.INS_Reader = window.INS_Reader || {};
 
   window.INS_Reader.siteAdapters = {
     isSinaPage,
+    isBaikePage,
     findArticleRoot,
     findArticleRootIn,
     findHeadline,
