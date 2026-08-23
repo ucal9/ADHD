@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "INS_Reader · 无干扰阅读模式",
-  "version": "0.1.0",
-  "description": "把任意网页调成适合你的阅读节奏：净化排版、隐藏干扰元素、自定义字号与主题。",
+  "name": "缓读 · 无干扰阅读模式",
+  "version": "0.2.11",
+  "description": "在真实网页上重构正文排版、降低视觉噪音，并允许用户随时恢复原页面。",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -11,8 +11,7 @@
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["http://localhost:8000/*"],
   "action": {
-    "default_title": "INS_Reader",
-    "default_popup": "src/popup.html",
+    "default_title": "缓读",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -28,6 +27,7 @@
       "js": [
         "vendor/readability.js",
         "src/modules/prefs-store.js",
+        "src/modules/sina-adapter.js",
         "src/modules/article-locator.js",
         "src/modules/feasibility.js",
         "src/modules/page-meta.js",
@@ -35,6 +35,8 @@
         "src/modules/dom-path.js",
         "src/modules/reading-stats.js",
         "src/modules/ai-client.js",
+        "src/modules/ai-enhance.js",
+        "src/modules/ai-card.js",
         "src/modules/reader-layer.js",
         "src/modules/panel-ui.js",
         "src/content.js"

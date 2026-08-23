@@ -1,0 +1,153 @@
+<!doctype html>
+<!-- 缓读 · AI 内容增强本地验证页（仅开发用，不属于插件运行时）
+     用 mock 顶掉 chrome.storage / chrome.runtime，让 ai-enhance.js 与 ai-card.js
+     可以在普通页面里跑真实逻辑：段落改写的落地与还原、跨节点重点片段的 Range 定位。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>AI 增强验证</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 780px; margin: 24px auto; padding: 0 16px; line-height: 1.7; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; border-radius: 6px; }
+  .ok { color: #2e7d32; } .fail { color: #b95042; }
+</style>
+</head>
+<body>
+  <article id="art">
+    <p id="p1">缓读是一个专注于阅读体验的浏览器扩展，它会在不修改原始页面结构的前提下重新组织正文排版，
+       同时把广告、侧边栏与评论区这类干扰元素隐藏起来，让读者可以把注意力集中在真正想读的内容上面。</p>
+    <p id="p2">这一段里包含 <a href="#" id="lnk">一个链接</a> 以及 <strong id="st">加粗文本</strong>，
+       用来验证重点片段的定位能够跨越多个文本节点边界，而不是只在单个文本节点内部查找匹配结果。</p>
+    <p id="p3">短段落。</p>
+    <p id="p4"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" />这一段带图片，按规则不应被改写，因为文本替换会让图片丢失，
+       而这个代价远高于改写一个段落带来的可读性收益，所以采集阶段就应该把它整段跳过。</p>
+  </article>
+  <div id="log"></div>
+
+<script>
+  // ---- mock chrome，仅覆盖被测模块用到的 API ----
+  let lastPayload = null;
+  window.chrome = {
+    runtime: {
+      id: 'test-harness',
+      lastError: undefined,
+      sendMessage: (msg) => {
+        lastPayload = msg.payload;
+        const { mode, text } = msg.payload;
+        if (mode === 'simplify') {
+          // 回传每个编号的改写结果，模拟后端已校验过的结构。
+          const ids = [...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+          return Promise.resolve({
+            ok: true,
+            data: { paragraphs: ids.map((i) => ({ i, text: `[改写${i}] 这是简化后的段落。` })) },
+          });
+        }
+        if (mode === 'keyinfo') {
+          return Promise.resolve({
+            ok: true,
+            // 第二个片段横跨 文本 + <a> + 文本 + <strong>，是跨节点定位的关键用例。
+            data: { spans: ['阅读体验', '包含 一个链接', '完全不存在的片段'] },
+          });
+        }
+        return Promise.resolve({ ok: true, result: '- 摘要要点' });
+      },
+    },
+    storage: { sync: { get: (k, cb) => cb({}), set: () => {} } },
+  };
+</script>
+<script src="../../src/modules/prefs-store.js"></script>
+<script src="../../src/modules/article-locator.js"></script>
+<script src="../../src/modules/ai-client.js"></script>
+<script src="../../src/modules/ai-enhance.js"></script>
+<script src="../../src/modules/ai-card.js"></script>
+<script>
+(async function () {
+  // 被测模块通过 readerLayer.getRenderedArticle() 判断落点；这里恒返回 null，
+  // 于是 aiEnhance 走"真实页面"分支，正是非阅读模式要验证的路径。
+  window.INS_Reader.readerLayer = { getRenderedArticle: () => null };
+  window.INS_Reader.articleLocator.findArticleRoot = () => document.getElementById('art');
+
+  const out = [];
+  const check = (name, cond, extra = '') => {
+    out.push(`${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`);
+    if (!cond) window.__failed = true;
+  };
+
+  await window.INS_Reader.prefsStore.load();
+  const { aiEnhance } = window.INS_Reader;
+
+  // ---- 简化段落 ----
+  const p1Before = document.getElementById('p1').textContent;
+  const linkBefore = document.getElementById('lnk');
+  const first = await aiEnhance.runSimplify();
+  check('只改写达到长度阈值且无媒体的段落', first.applied === 2, `实际 ${first.applied} 段`);
+  check('高亮没开时不上报失效', first.keyInfoCleared === false);
+  check('p3 短段落未被改写', document.getElementById('p3').textContent === '短段落。');
+  check('p4 含图片段落未被改写', !!document.getElementById('p4').querySelector('img'));
+  check('p1 已被替换为改写文本', document.getElementById('p1').textContent.startsWith('[改写'));
+  check('请求只包含待改写段落', /\[0\][\s\S]*\[1\]/.test(lastPayload.text) && !/\[2\]/.test(lastPayload.text));
+
+  aiEnhance.clearSimplify();
+  check('撤销后 p1 文本逐字还原', document.getElementById('p1').textContent === p1Before);
+  check('撤销后 p2 内的链接是同一个节点', document.getElementById('lnk') === linkBefore);
+
+  // ---- 缓存复用：第二次开启不应再发请求 ----
+  lastPayload = null;
+  await aiEnhance.runSimplify();
+  check('二次开启命中缓存，未发起请求', lastPayload === null);
+  aiEnhance.clearSimplify();
+
+  // ---- 高亮核心信息 ----
+  const htmlBefore = document.getElementById('art').innerHTML;
+  const hits = await aiEnhance.runKeyInfo();
+  check('定位到可命中的片段（含跨节点那条）', hits === 2, `实际 ${hits} 处`);
+  check('高亮不改动任何 DOM', document.getElementById('art').innerHTML === htmlBefore);
+  check('高亮已注册到 CSS.highlights', CSS.highlights.has('ins-reader-key-info'));
+
+  const hl = CSS.highlights.get('ins-reader-key-info');
+  const texts = [...hl].map((r) => r.toString().replace(/\s+/g, ' ').trim());
+  check('跨节点片段的 Range 覆盖完整文本', texts.some((t) => t === '包含 一个链接'), texts.join(' | '));
+
+  aiEnhance.clearKeyInfo();
+  check('撤销后高亮已移除', !CSS.highlights.has('ins-reader-key-info'));
+
+  // ---- 两个功能叠加 ----
+  // 改写会换掉段落文本，原文措辞不复存在，重点片段整体失去落点。此时不能留下
+  // "开关开着、页面上没有高亮"的假象，必须关掉高亮并上报给调用方。
+  const readHighlights = () => {
+    const h = CSS.highlights.get('ins-reader-key-info');
+    return h ? [...h].map((r) => r.toString().trim()) : [];
+  };
+  await aiEnhance.runKeyInfo();
+  const stacked = await aiEnhance.runSimplify();
+  check('改写让高亮全部失去落点时上报 keyInfoCleared', stacked.keyInfoCleared === true);
+  check('失效的高亮已被移除而非留下空 Range', readHighlights().length === 0, JSON.stringify(readHighlights()));
+  check('高亮状态已同步为关闭', aiEnhance.getStatus().keyInfoActive === false);
+
+  // 还原段落后重新开启高亮应当照常工作（缓存已清空，会重新提取）
+  aiEnhance.clearSimplify();
+  const again = await aiEnhance.runKeyInfo();
+  check('还原后重新开启高亮可恢复', again === 2, `实际 ${again} 处`);
+  aiEnhance.clearKeyInfo();
+
+  // ---- 状态与浮层卡片 ----
+  const st = aiEnhance.getStatus();
+  check('全部撤销后状态归零', !st.simplifyActive && !st.keyInfoActive);
+  window.INS_Reader.aiCard.showResult('simplify', '已简化 2 个段落');
+  const cardHost = document.getElementById('ins-reader-ai-card-host');
+  check('浮层卡片已挂载且使用 Shadow DOM', !!cardHost && !!cardHost.shadowRoot);
+  check('卡片提供撤销入口', !!cardHost.shadowRoot.querySelector('.card-undo'));
+  window.INS_Reader.aiCard.dismiss();
+  check('dismiss 后卡片宿主被移除', !document.getElementById('ins-reader-ai-card-host'));
+
+  document.getElementById('log').textContent = out.join('\n') +
+    `\n\n${window.__failed ? 'FAILED' : 'ALL PASSED'}`;
+  window.__done = true;
+})().catch((err) => {
+  document.getElementById('log').textContent = 'THREW: ' + err.message + '\n' + err.stack;
+  window.__done = true;
+  window.__failed = true;
+});
+</script>
+</body>
+</html>

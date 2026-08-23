@@ -1,0 +1,20 @@
+<svg width="960" height="280" viewBox="0 0 960 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(56,40)">
+    <rect x="0" y="0" width="200" height="200" rx="44" fill="#FFFFFF"/>
+    <path d="M58 62C58 53.1634 65.1634 46 74 46H126C134.837 46 142 53.1634 142 62V138C142 146.837 134.837 154 126 154H74C65.1634 154 58 146.837 58 138V62Z" fill="#FFFFFF" stroke="#111111" stroke-width="10"/>
+    <path d="M82 78H122" stroke="#111111" stroke-width="10" stroke-linecap="round"/>
+    <path d="M78 100C92 90 106 90 120 100C134 110 146 110 158 100" stroke="#FFB800" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M78 126C92 116 106 116 120 126C134 136 146 136 158 126" stroke="#111111" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.96"/>
+    <circle cx="150" cy="74" r="8" fill="#111111"/>
+    <path d="M150 74V62" stroke="#111111" stroke-width="6" stroke-linecap="round"/>
+    <path d="M150 74H162" stroke="#111111" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(320,96)">
+    <text x="0" y="58" fill="#111111" font-family="Inter, 'Avenir Next', 'Segoe UI', sans-serif" font-size="72" font-weight="700" letter-spacing="0">
+      CalmRead
+    </text>
+    <text x="2" y="104" fill="#111111" font-family="Inter, 'Avenir Next', 'Segoe UI', sans-serif" font-size="24" font-weight="500" letter-spacing="0">
+      calm reading for noisy pages
+    </text>
+  </g>
+</svg>

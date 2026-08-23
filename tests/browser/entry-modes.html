@@ -1,0 +1,196 @@
+<!doctype html>
+<!-- 缓读 · 入口模式本地验证页（仅开发用，不属于插件运行时）
+     验证：默认模式全开；从未激活进详细配置套全关；一级关闭时二级置灰但可点醒一级；
+     已激活后再进详细配置不清空；仅开排版时在真实页面注入样式。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>入口模式验证</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 24px; font-size: 16px; line-height: 1.5; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <h1 class="main-title">入口模式测试标题</h1>
+  <p class="date-source"><span class="date">2026年08月23日</span></p>
+  <article id="article">
+    <p>
+      缓读会在真实网页上重构正文排版并降低视觉噪音，这一段需要足够长才能通过可行性检查。
+      读者从入口选择默认模式后，排版、AI 与降噪一级都应立刻打开；从未激活时进入详细配置则应全关。
+      打开任意一项降噪二级只应带起动态降噪一级，其它模块保持关闭。已激活后再进详细配置必须保留当前开关。
+      为了让测试页的正文长度稳定超过可行性阈值，这里再补一段说明：降噪作用在整份页面克隆或真实页面隐藏上，
+      每个按钮对应一类节点，关总开关时整页原样保留，开总开关但未全开细分时只隐藏已开启的类别。
+    </p>
+  </article>
+  <aside id="page-sidebar">侧栏</aside>
+  <div id="log"></div>
+
+<script>
+  let storedPrefs = {};
+  window.chrome = {
+    runtime: { id: 'test-harness', lastError: undefined, sendMessage: () => Promise.resolve({ ok: true }) },
+    storage: {
+      sync: {
+        get: (k, cb) => cb({ ins_reader_prefs_v1: storedPrefs }),
+        set: (obj) => {
+          const key = Object.keys(obj)[0];
+          storedPrefs = obj[key];
+        },
+      },
+    },
+  };
+</script>
+<script src="../../src/modules/prefs-store.js"></script>
+<script src="../../src/modules/article-locator.js"></script>
+<script src="../../src/modules/feasibility.js"></script>
+<script src="../../src/modules/page-meta.js"></script>
+<script src="../../src/modules/noise-filter.js"></script>
+<script src="../../src/modules/dom-path.js"></script>
+<script src="../../src/modules/reading-stats.js"></script>
+<script src="../../src/modules/ai-client.js"></script>
+<script src="../../src/modules/ai-enhance.js"></script>
+<script src="../../src/modules/ai-card.js"></script>
+<script src="../../src/modules/reader-layer.js"></script>
+<script src="../../src/modules/panel-ui.js"></script>
+<script>
+(async function () {
+  const out = [];
+  const check = (name, cond, extra = '') => {
+    out.push(`${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`);
+    if (!cond) window.__failed = true;
+  };
+
+  const { prefsStore, readerLayer, noiseFilter, panelUI } = window.INS_Reader;
+
+  function applyAll() {
+    const prefs = prefsStore.get();
+    prefsStore.syncEnabled(prefs);
+    if (!prefs.enabled) {
+      readerLayer.remove();
+      return;
+    }
+    if (readerLayer.render()) readerLayer.lockOriginalPage();
+    else readerLayer.unlockOriginalPage();
+  }
+
+  window.INS_Reader.appController = {
+    applyAll,
+    restoreOriginalPage: applyAll,
+    deactivateReadingMode: applyAll,
+  };
+
+  window.INS_Reader.articleLocator.findArticleRoot = () => document.getElementById('article');
+
+  await prefsStore.load();
+  const prefs = prefsStore.get();
+
+  check('空存储视为从未激活', prefsStore.isUnactivated(prefs));
+  check('首次加载不自动启用', prefs.enabled === false);
+
+  panelUI.openQuick();
+  const panelHost = document.getElementById('ins-reader-panel-host');
+  const shadow = () => panelHost.shadowRoot;
+  const entryDefaultChip = shadow().querySelector('[data-default-preset]');
+  check('入口有默认模式胶囊', !!entryDefaultChip);
+  check('默认模式是胶囊不是矩形按钮', entryDefaultChip?.classList.contains('preset-chip') === true);
+  check('入口没有矩形默认模式按钮', !shadow().querySelector('.mode-btn'));
+  check('首次默认模式胶囊未选中', entryDefaultChip?.classList.contains('active') === false);
+  check('入口有详细配置', !!shadow().querySelector('[data-role="expand-btn"]'));
+  check('入口没有总开关', !shadow().querySelector('[data-role="panel-enabled-toggle"]'));
+
+  shadow().querySelector('[data-role="expand-btn"]').click();
+  check('从未激活进详细配置后已激活', prefs.hasActivated === true);
+  check('详细配置套全关后 enabled 为关', prefs.enabled === false);
+  check('详细配置套全关后排版关', prefs.typographyEnabled === false);
+  check('详细配置套全关后 AI 关', prefs.aiEnabled === false);
+  check('详细配置套全关后降噪关', prefs.noiseReduction === false);
+  check('详细配置套全关后侧栏关', prefs.noiseOptions.sidebar === false);
+  check('详细配置套全关后简化关', prefs.aiHighlight.simplifySentences === false);
+
+  const masterRoles = ['typography-master-switch', 'ai-master-switch', 'noise-master-switch'];
+  check(
+    '详细配置一级开关均可点',
+    masterRoles.every((role) => {
+      const btn = shadow().querySelector(`[data-role="${role}"]`);
+      return btn && !btn.disabled;
+    })
+  );
+  check('详细配置露出默认模式', !!shadow().querySelector('[data-default-preset]'));
+  check('全关时排版组置灰', !!shadow().querySelector('#typography-menu.is-disabled'));
+  const sidebarBtn = shadow().querySelector('[data-noise-key="sidebar"]');
+  check('全关时降噪二级置灰可点', sidebarBtn?.disabled === false && sidebarBtn?.classList.contains('is-locked') === true);
+  check('全关时 AI 二级置灰可点', shadow().querySelector('[data-ai-feature="simplifyParagraphs"]')?.disabled === false && shadow().querySelector('[data-ai-feature="simplifyParagraphs"]')?.classList.contains('is-locked') === true);
+
+  sidebarBtn.click();
+  check('开一项降噪二级后降噪一级开启', prefs.noiseReduction === true);
+  check('开一项降噪二级后其它降噪仍关', prefs.noiseOptions.comments === false && prefs.noiseOptions.banners === false);
+  check('开一项降噪二级后排版仍关', prefs.typographyEnabled === false);
+  check('开一项降噪二级后 AI 仍关', prefs.aiEnabled === false);
+  check('开一项降噪二级后派生 enabled', prefs.enabled === true);
+  check('开一项降噪二级后侧栏被隐藏', document.getElementById('page-sidebar').hasAttribute(noiseFilter.LIVE_HIDE_ATTR));
+  check('开一项降噪二级不进正文阅读层', !document.getElementById('ins-reader-host'));
+
+  shadow().querySelector('[data-role="collapse-btn"]').click();
+  shadow().querySelector('[data-role="expand-btn"]').click();
+  check('已激活再进详细配置保留侧栏开', prefs.noiseOptions.sidebar === true && prefs.noiseReduction === true);
+  check('已激活再进详细配置不清空排版关态', prefs.typographyEnabled === false);
+
+  shadow().querySelector('[data-role="collapse-btn"]').click();
+  shadow().querySelector('[data-default-preset]').click();
+  check('默认模式胶囊选中', shadow().querySelector('[data-default-preset]')?.classList.contains('active') === true);
+  check('默认模式排版开', prefs.typographyEnabled !== false);
+  check('默认模式 AI 开', prefs.aiEnabled === true);
+  check('默认模式降噪开', prefs.noiseReduction === true);
+  check('默认模式四项降噪全开', noiseFilter.UI_NOISE_KEYS.every((key) => prefs.noiseOptions[key]));
+  check('默认模式不盖正文阅读层', !document.getElementById('ins-reader-host'));
+  check('默认模式侧栏在原页被隐藏', document.getElementById('page-sidebar').hasAttribute(noiseFilter.LIVE_HIDE_ATTR));
+
+  shadow().querySelector('[data-default-preset]').click();
+  check('取消选中后胶囊未选中', shadow().querySelector('[data-default-preset]')?.classList.contains('active') === false);
+  check('取消后回到侧栏开', prefs.noiseOptions.sidebar === true && prefs.noiseReduction === true);
+  check('取消后排版仍关', prefs.typographyEnabled === false);
+  check('取消后 AI 仍关', prefs.aiEnabled === false);
+  check('取消后不在正文阅读层', !document.getElementById('ins-reader-host'));
+  check('取消后侧栏仍隐藏', document.getElementById('page-sidebar').hasAttribute(noiseFilter.LIVE_HIDE_ATTR));
+
+  prefs.typographyEnabled = true;
+  prefs.aiEnabled = false;
+  prefs.noiseReduction = false;
+  prefsStore.syncEnabled(prefs);
+  applyAll();
+  const article = document.getElementById('article');
+  check('仅开排版不进正文阅读层', !document.getElementById('ins-reader-host'));
+  check('仅开排版注入原页样式', !!document.getElementById('ins-reader-live-typography'));
+  check('仅开排版改了正文字号', getComputedStyle(article).fontSize === `${prefs.fontSize}px`);
+
+  prefs.typographyEnabled = false;
+  prefsStore.syncEnabled(prefs);
+  applyAll();
+  check('关掉排版后卸掉原页样式', !document.getElementById('ins-reader-live-typography'));
+
+  storedPrefs = {
+    enabled: true,
+    typographyEnabled: true,
+    noiseReduction: true,
+    aiEnabled: false,
+    hasCustomized: false,
+  };
+  await prefsStore.load();
+  check('旧用户已启用过则不算从未激活', prefsStore.isUnactivated(prefsStore.get()) === false);
+
+  storedPrefs = {};
+  await prefsStore.load();
+  check('重新空存储仍是从未激活', prefsStore.isUnactivated(prefsStore.get()));
+
+  document.getElementById('log').textContent = out.join('\n') +
+    `\n\n${window.__failed ? 'FAILED' : 'ALL PASSED'}`;
+  window.__done = true;
+})().catch((err) => {
+  document.getElementById('log').textContent = 'THREW: ' + err.message + '\n' + err.stack;
+  window.__done = true;
+  window.__failed = true;
+});
+</script>
+</body>
+</html>

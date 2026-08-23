@@ -1,17 +1,25 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 沉浸阅读层模块
-// 职责：在独立的 Shadow DOM 全屏层中展示清理后的正文，与原页面 DOM 完全隔离，
-// 不修改原页面结构，避免因隐藏兄弟节点导致 grid/flex 布局跑位。
-// 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath / readingStats。
+// 职责：阅读模式有两条路径——
+//   降噪未全开：不盖阅读层，在真实页面上按开关隐藏噪音（不拆节点，保留原布局）；
+//   四个细分全开：在 Shadow DOM 里只展示正文克隆。
+// 不修改原页面的父子结构。
+// 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath /
+// readingStats / aiEnhance。
 // 调用者：content.js 的 applyAll()/restoreOriginalPage() 调用 render()/remove()/
 // lockOriginalPage()/unlockOriginalPage()；render() 返回 false 时 content.js 不会
 // 锁定原页面。panel-ui.js 每次改设置后调用 render() 重新渲染，并读取
 // getHiddenCount()/getArticleText()/getSummary()/getLastFeasibilityReason() 展示状态、
 // 调用 setSummary() 写入 AI 摘要结果。
+// render() 末尾会调用 aiEnhance.reapply()：克隆体每次重建都是新节点，已生成的
+// AI 改写/高亮必须重新落地一次（走缓存，不重复请求）。getRenderedArticle() 就是
+// 给 aiEnhance 用来拿当前克隆正文节点的。
 
 window.INS_Reader = window.INS_Reader || {};
 
 (function () {
+  const LIVE_SUMMARY_ID = 'ins-reader-live-summary';
+
   const state = {
     readerHost: null,
     articleSourceRoot: null, // 原页面中定位到的正文节点（只读，从不修改）
@@ -20,9 +28,18 @@ window.INS_Reader = window.INS_Reader || {};
     onHiddenCountChange: null, // 供面板模块订阅，渲染完成后回调最新的降噪计数
     summaryText: '', // AI 摘要结果，由面板模块调用 aiClient 后写入
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()
+    renderedArticle: null, // 克隆体中的正文节点，供 aiEnhance 落地改写/高亮
     lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
     pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
+    livePageMode: false, // 未全开降噪时作用在真实页面上；四开关全开时为 false，使用正文阅读层
   };
+
+  function INS_setHiddenCount(count) {
+    state.hiddenCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+    if (typeof state.onHiddenCountChange === 'function') {
+      state.onHiddenCountChange(state.hiddenCount);
+    }
+  }
 
   function INS_ensureReaderHost() {
     if (state.readerHost) return state.readerHost;
@@ -61,6 +78,11 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_lockOriginalPage() {
+    // 真实页降噪需要继续滚动原页面，不能把 overflow 锁死。
+    if (state.livePageMode) {
+      INS_unlockOriginalPage();
+      return;
+    }
     if (state.bodyOverflowBackup === null) {
       state.bodyOverflowBackup = document.documentElement.style.overflow;
     }
@@ -70,6 +92,225 @@ window.INS_Reader = window.INS_Reader || {};
   function INS_unlockOriginalPage() {
     document.documentElement.style.overflow = state.bodyOverflowBackup || '';
     state.bodyOverflowBackup = null;
+  }
+
+  // 原页靠站点 CSS 隐藏的节点（登录层、空蒙层等），克隆进 Shadow 后会丢掉那些规则
+  // 而变成可见的白罩。按相同文档顺序把 display/visibility 写到克隆节点的内联样式上。
+  function INS_copyHiddenComputedStyles(sourceRoot, cloneRoot) {
+    const sourceEls = sourceRoot.querySelectorAll('*');
+    const cloneEls = cloneRoot.querySelectorAll('*');
+    const limit = Math.min(sourceEls.length, cloneEls.length);
+    for (let i = 0; i < limit; i++) {
+      let computed;
+      try {
+        computed = window.getComputedStyle(sourceEls[i]);
+      } catch (error) {
+        continue;
+      }
+      if (computed.display === 'none') cloneEls[i].style.display = 'none';
+      else if (computed.visibility === 'hidden') cloneEls[i].style.visibility = 'hidden';
+    }
+  }
+
+  function INS_resolveCloneArticle(bodyClone, sourceNode, path) {
+    const { articleLocator, domPath } = window.INS_Reader;
+    const byLocator = articleLocator.findArticleRootIn?.(bodyClone, sourceNode);
+    if (byLocator) return byLocator;
+    if (path) return domPath.resolveChildIndexPath(bodyClone, path);
+    return null;
+  }
+
+  function INS_unwrapBodyClone(bodyClone) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ins-reader-page';
+    while (bodyClone.firstChild) wrap.appendChild(bodyClone.firstChild);
+    return wrap;
+  }
+
+  function INS_syncAutoplay(prefs) {
+    if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
+      INS_pauseAutoplayMedia();
+    } else {
+      INS_restoreAutoplayMedia();
+    }
+  }
+
+  const LIVE_TYPO_STYLE_ID = 'ins-reader-live-typography';
+  const LIVE_TYPO_HTML_CLASS = 'ins-reader-live-typo';
+  const LIVE_TYPO_ARTICLE_CLASS = 'ins-reader-live-typo-article';
+  const LIVE_TYPO_HEADLINE_CLASS = 'ins-reader-live-typo-headline';
+
+  function INS_liveFontFamily(prefs) {
+    const fontFamilyMap = {
+      default: '"Noto Sans SC", -apple-system, sans-serif',
+      serif: '"Noto Serif SC", serif',
+      'sans-serif': '"Noto Sans SC", -apple-system, sans-serif',
+      monospace: '"Noto Sans Mono", monospace',
+    };
+    return fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
+  }
+
+  // 未进正文阅读层时，排版只能作用在真实页面上：用一份可卸载的 stylesheet + class，
+  // 不改节点结构。阅读层 overlay 有自己的样式，进入 overlay 前必须清掉这份注入。
+  function INS_clearLiveTypography() {
+    document.documentElement.classList.remove(LIVE_TYPO_HTML_CLASS);
+    document.querySelectorAll(`.${LIVE_TYPO_ARTICLE_CLASS}`).forEach((el) => {
+      el.classList.remove(LIVE_TYPO_ARTICLE_CLASS);
+    });
+    document.querySelectorAll(`.${LIVE_TYPO_HEADLINE_CLASS}`).forEach((el) => {
+      el.classList.remove(LIVE_TYPO_HEADLINE_CLASS);
+    });
+    const style = document.getElementById(LIVE_TYPO_STYLE_ID);
+    if (style) style.remove();
+  }
+
+  function INS_clearLiveSummary() {
+    document.querySelectorAll(`#${LIVE_SUMMARY_ID}`).forEach((el) => el.remove());
+  }
+
+  // 原生页面模式下把摘要放在正文容器顶部，作为普通文档内容参与页面布局和滚动，
+  // 不使用 fixed/absolute 悬浮，也不依赖 AI 状态卡片。
+  function INS_renderLiveSummary(sourceNode, text) {
+    INS_clearLiveSummary();
+    if (!sourceNode || !text) return;
+    const summary = document.createElement('section');
+    summary.id = LIVE_SUMMARY_ID;
+    summary.setAttribute('aria-label', 'AI 摘要');
+    summary.style.cssText = `
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      margin: 0 0 24px;
+      padding: 14px 18px;
+      color: #3b4540;
+      background: #FFF3CC;
+      border: 1px solid #FFB800;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-line;
+    `;
+    const title = document.createElement('strong');
+    title.textContent = 'AI 摘要';
+    title.style.cssText = 'display:block; margin-bottom:6px; color:#7A5800; font-size:13px;';
+    const body = document.createElement('div');
+    body.textContent = text;
+    summary.append(title, body);
+    sourceNode.insertBefore(summary, sourceNode.firstChild);
+  }
+
+  function INS_applyLiveTypography(sourceNode, prefs) {
+    INS_clearLiveTypography();
+    if (prefs.typographyEnabled === false) return;
+
+    const theme = { ...prefs.customColors };
+    const fontFamily = INS_liveFontFamily(prefs);
+    const article = sourceNode || state.articleSourceRoot;
+    if (article && article.nodeType === 1) article.classList.add(LIVE_TYPO_ARTICLE_CLASS);
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    [title, meta].filter(Boolean).forEach((el) => el.classList.add(LIVE_TYPO_HEADLINE_CLASS));
+    document.documentElement.classList.add(LIVE_TYPO_HTML_CLASS);
+
+    const style = document.createElement('style');
+    style.id = LIVE_TYPO_STYLE_ID;
+    style.textContent = `
+      html.${LIVE_TYPO_HTML_CLASS},
+      html.${LIVE_TYPO_HTML_CLASS} body {
+        background: ${theme.bg} !important;
+      }
+      .${LIVE_TYPO_ARTICLE_CLASS},
+      .${LIVE_TYPO_ARTICLE_CLASS} p,
+      .${LIVE_TYPO_HEADLINE_CLASS} {
+        color: ${theme.text} !important;
+        font-family: ${fontFamily} !important;
+        font-size: ${prefs.fontSize}px !important;
+        line-height: ${prefs.lineHeight} !important;
+        letter-spacing: ${prefs.letterSpacing}em !important;
+      }
+      .${LIVE_TYPO_ARTICLE_CLASS} p {
+        margin-bottom: ${prefs.paragraphSpacing}em !important;
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function INS_teardownOverlay() {
+    state.renderedArticle = null;
+    if (state.readerHost) {
+      state.readerHost.remove();
+      state.readerHost = null;
+    }
+  }
+
+  function INS_protectRoots(sourceNode, scope) {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(scope || document);
+    return [sourceNode, title, meta].filter(Boolean);
+  }
+
+  function INS_headingAlreadyPresent(mountedArticle, sourceEl) {
+    if (!mountedArticle || !sourceEl) return false;
+    const text = (sourceEl.textContent || '').trim();
+    if (!text) return false;
+    return Array.from(mountedArticle.querySelectorAll('h1, h2, .main-title')).some(
+      (el) => (el.textContent || '').trim() === text
+    );
+  }
+
+  function INS_metaAlreadyPresent(mountedArticle, sourceEl) {
+    if (!mountedArticle || !sourceEl) return false;
+    if (sourceEl.id) {
+      try {
+        const escaped = window.CSS && CSS.escape ? CSS.escape(sourceEl.id) : sourceEl.id;
+        if (mountedArticle.querySelector(`#${escaped}`)) return true;
+      } catch (error) {
+        // id 含特殊字符时改用文本比对。
+      }
+    }
+    const snippet = (sourceEl.textContent || '').trim().slice(0, 24);
+    return Boolean(snippet) && (mountedArticle.textContent || '').includes(snippet);
+  }
+
+  function INS_appendHeadline(articleWrap, mountedArticle) {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    if (!title && !meta) return;
+
+    const wrap = document.createElement('header');
+    wrap.className = 'ins-reader-headline';
+    if (title && !INS_headingAlreadyPresent(mountedArticle, title)) {
+      wrap.appendChild(title.cloneNode(true));
+    }
+    if (meta && !INS_metaAlreadyPresent(mountedArticle, meta)) {
+      const metaClone = meta.cloneNode(true);
+      metaClone.querySelectorAll('img, picture, video, iframe, canvas').forEach((node) => node.remove());
+      wrap.appendChild(metaClone);
+    }
+    if (!wrap.firstChild) return;
+    articleWrap.appendChild(wrap);
+  }
+
+  function INS_headlinePlainText() {
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    return [title, meta]
+      .filter(Boolean)
+      .map((el) => (el.textContent || '').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  function INS_renderLivePage(sourceNode, prefs) {
+    const { noiseFilter } = window.INS_Reader;
+    state.livePageMode = true;
+    INS_teardownOverlay();
+    INS_clearLiveSummary();
+    state.articleText = sourceNode.textContent || '';
+    INS_renderLiveSummary(sourceNode, state.summaryText);
+    INS_setHiddenCount(noiseFilter.applyLiveHide(INS_protectRoots(sourceNode)));
+    INS_applyLiveTypography(sourceNode, prefs);
+    INS_syncAutoplay(prefs);
+    // 落点留在真实正文，aiEnhance 会走原页面分支而不是 Shadow。
+    state.renderedArticle = null;
+    window.INS_Reader.aiEnhance.reapply();
+    return true;
   }
 
   function INS_render() {
@@ -87,43 +328,41 @@ window.INS_Reader = window.INS_Reader || {};
     }
     state.lastFeasibilityReason = null;
 
+    if (!noiseFilter.isStrictArticleMode(prefs)) {
+      return INS_renderLivePage(sourceNode, prefs);
+    }
+
+    noiseFilter.clearLiveHide();
+    INS_clearLiveTypography();
+    INS_clearLiveSummary();
+    state.livePageMode = false;
+
     const host = INS_ensureReaderHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = '';
 
-    // 先记录正文节点在真实 DOM 中的下标路径，再克隆**整个 body**（而非只克隆正文节点）：
-    // 广告/侧边栏/评论等干扰元素与正文在 DOM 树中是平级关系，必须存在于克隆体里，
-    // 降噪选择器才能命中它们。克隆会产生全新的节点身份，因此清理完再用这条路径
-    // 在克隆体里重新定位出等价的正文节点。
-    const path = domPath.getChildIndexPath(sourceNode, document.body);
+    // 正文节点必须在删除之前定位：删完再按下标找会错位。
+    const path = sourceNode === document.body ? null : domPath.getChildIndexPath(sourceNode, document.body);
     const bodyClone = document.body.cloneNode(true);
-    state.hiddenCount = noiseFilter.stripNoiseFromClone(bodyClone);
+    INS_copyHiddenComputedStyles(document.body, bodyClone);
+    const articleClone = INS_resolveCloneArticle(bodyClone, sourceNode, path);
+    INS_setHiddenCount(noiseFilter.stripNoiseFromClone(bodyClone, INS_protectRoots(articleClone, bodyClone)));
+    INS_syncAutoplay(prefs);
 
-    // 自动播放的暂停必须作用于原页面（克隆体里的播放器不会发声），因此单独处理
-    if (prefs.noiseReduction && prefs.noiseOptions.pauseAutoplay) {
-      INS_pauseAutoplayMedia();
-    } else {
-      INS_restoreAutoplayMedia();
-    }
-    if (typeof state.onHiddenCountChange === 'function') {
-      state.onHiddenCountChange(state.hiddenCount);
-    }
+    const pageClone = INS_unwrapBodyClone(bodyClone);
+    const mountedArticle = articleClone && pageClone.contains(articleClone) ? articleClone : null;
+    const clone = mountedArticle || pageClone;
+    const headlineText = INS_headlinePlainText();
+    state.articleText = [headlineText, (mountedArticle || clone).textContent || ''].filter(Boolean).join('\n');
+    state.renderedArticle = mountedArticle || clone;
 
-    const clone = (path && domPath.resolveChildIndexPath(bodyClone, path)) || bodyClone;
-    state.articleText = clone.textContent || '';
-
-    const theme = { ...prefs.customColors, accent: '#278477' };
+    const typographyEnabled = prefs.typographyEnabled !== false;
+    const theme = { ...prefs.customColors, accent: '#FFB800' };
     const maxWidth = prefs.contentWidth === 'narrow' ? '640px' : '900px';
 
     // 字体映射
-    const fontFamilyMap = {
-      default: '"Noto Sans SC", -apple-system, sans-serif',
-      serif: '"Noto Serif SC", serif',
-      'sans-serif': '"Noto Sans SC", -apple-system, sans-serif',
-      monospace: '"Noto Sans Mono", monospace',
-    };
-    const fontFamily = fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
+    const fontFamily = INS_liveFontFamily(prefs);
 
     const style = document.createElement('style');
     style.textContent = `
@@ -131,7 +370,7 @@ window.INS_Reader = window.INS_Reader || {};
         position: fixed; inset: 0; z-index: 1;
         background: ${theme.bg};
         overflow-y: auto;
-        font-family: ${fontFamily};
+        font-family: ${typographyEnabled ? fontFamily : 'sans-serif'};
       }
       .ins-reader-progress-track {
         position: sticky; top: 0; z-index: 2;
@@ -144,25 +383,61 @@ window.INS_Reader = window.INS_Reader || {};
         background: ${theme.accent};
         transition: width 0.1s linear;
       }
-      .ins-reader-time {
-        position: sticky; top: 3px; z-index: 2;
-        text-align: right;
-        padding: 6px 24px 0;
-        font-size: 12px;
-        color: ${theme.accent};
-        background: ${theme.bg};
-      }
       .ins-reader-article {
         max-width: ${maxWidth};
         margin: 0 auto;
         padding: 20px 24px 80px;
         color: ${theme.text};
-        font-size: ${prefs.fontSize}px;
-        line-height: ${prefs.lineHeight};
-        letter-spacing: ${prefs.letterSpacing}em;
+        font-size: ${typographyEnabled ? `${prefs.fontSize}px` : '16px'};
+        line-height: ${typographyEnabled ? prefs.lineHeight : 1.6};
+        letter-spacing: ${typographyEnabled ? `${prefs.letterSpacing}em` : 'normal'};
       }
       .ins-reader-article p {
-        margin-bottom: ${prefs.paragraphSpacing}em;
+        margin-bottom: ${typographyEnabled ? `${prefs.paragraphSpacing}em` : '1em'};
+      }
+      .ins-reader-headline {
+        margin: 0 0 1.5em;
+      }
+      .ins-reader-headline h1,
+      .ins-reader-headline .main-title {
+        font-size: 1.5em;
+        font-weight: 700;
+        line-height: 1.35;
+        margin: 0 0 0.4em;
+        color: ${theme.text};
+      }
+      .ins-reader-headline .date-source,
+      .ins-reader-headline .article-info,
+      .ins-reader-headline .byline {
+        font-size: 0.82em;
+        line-height: 1.5;
+        opacity: 0.72;
+      }
+      /* 新浪 .date-source 里作者常用 <p class="author">，进阅读层后变成块级会在「作者」后换行。 */
+      .ins-reader-headline .date-source p,
+      .ins-reader-headline .date-source div,
+      .ins-reader-headline .date-source span,
+      .ins-reader-headline .date-source a,
+      .ins-reader-headline .article-info p,
+      .ins-reader-headline .article-info div,
+      .ins-reader-headline .byline p,
+      .ins-reader-headline .byline div {
+        display: inline;
+        margin: 0;
+        padding: 0;
+        float: none;
+        width: auto;
+      }
+      .ins-reader-headline .date-source br,
+      .ins-reader-headline .article-info br,
+      .ins-reader-headline .byline br {
+        display: none;
+      }
+      .ins-reader-headline img,
+      .ins-reader-headline picture,
+      .ins-reader-headline video,
+      .ins-reader-headline canvas {
+        display: none !important;
       }
       .ins-reader-article a { color: ${theme.accent}; }
       .ins-reader-article img { max-width: 100%; height: auto; }
@@ -182,6 +457,7 @@ window.INS_Reader = window.INS_Reader || {};
         margin: 0 0 6px;
       }
       .ins-reader-summary-body { white-space: pre-line; }
+      ${window.INS_Reader.aiEnhance.HIGHLIGHT_CSS}
     `;
     shadow.appendChild(style);
 
@@ -195,12 +471,6 @@ window.INS_Reader = window.INS_Reader || {};
     progressTrack.appendChild(progressBar);
     overlay.appendChild(progressTrack);
 
-    const timeEl = document.createElement('div');
-    timeEl.className = 'ins-reader-time';
-    const totalMinutes = readingStats.estimateMinutes(clone.textContent || '');
-    timeEl.textContent = `预计阅读 ${readingStats.formatMinutes(totalMinutes)}`;
-    overlay.appendChild(timeEl);
-
     const articleWrap = document.createElement('div');
     articleWrap.className = 'ins-reader-article';
     if (state.summaryText) {
@@ -210,6 +480,7 @@ window.INS_Reader = window.INS_Reader || {};
       summaryEl.querySelector('.ins-reader-summary-body').textContent = state.summaryText;
       articleWrap.appendChild(summaryEl);
     }
+    INS_appendHeadline(articleWrap, mountedArticle);
     articleWrap.appendChild(clone);
     overlay.appendChild(articleWrap);
     shadow.appendChild(overlay);
@@ -221,17 +492,23 @@ window.INS_Reader = window.INS_Reader || {};
         overlay.clientHeight
       );
       progressBar.style.width = `${progress * 100}%`;
-      const remaining = totalMinutes * (1 - progress);
-      timeEl.textContent = progress >= 0.98
-        ? '已读完'
-        : `剩余 ${readingStats.formatMinutes(remaining)}`;
     });
+
+    // 克隆体是全新节点，之前落地的 AI 改写/高亮随旧克隆体一起消失了，
+    // 必须在挂载后用缓存重新落地一次（不发请求）。
+    window.INS_Reader.aiEnhance.reapply();
 
     return true;
   }
 
   function INS_remove() {
+    window.INS_Reader.noiseFilter.clearLiveHide();
+    INS_clearLiveTypography();
+    INS_clearLiveSummary();
     INS_restoreAutoplayMedia();
+    INS_setHiddenCount(0);
+    state.renderedArticle = null;
+    state.livePageMode = false;
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;
@@ -250,6 +527,12 @@ window.INS_Reader = window.INS_Reader || {};
     return state.articleText;
   }
 
+  // 克隆体中的正文节点，供 aiEnhance 在阅读层内落地改写/高亮。
+  // 阅读层未渲染或已卸载时返回 null，此时 aiEnhance 会改为作用于真实页面。
+  function INS_getRenderedArticle() {
+    return state.renderedArticle;
+  }
+
   function INS_setSummary(text) {
     state.summaryText = text || '';
   }
@@ -262,6 +545,10 @@ window.INS_Reader = window.INS_Reader || {};
     return state.lastFeasibilityReason;
   }
 
+  function INS_clearFeasibilityReason() {
+    state.lastFeasibilityReason = null;
+  }
+
   window.INS_Reader.readerLayer = {
     render: INS_render,
     remove: INS_remove,
@@ -270,8 +557,10 @@ window.INS_Reader = window.INS_Reader || {};
     getHiddenCount: INS_getHiddenCount,
     setOnHiddenCountChange: INS_setOnHiddenCountChange,
     getArticleText: INS_getArticleText,
+    getRenderedArticle: INS_getRenderedArticle,
     setSummary: INS_setSummary,
     getSummary: INS_getSummary,
     getLastFeasibilityReason: INS_getLastFeasibilityReason,
+    clearFeasibilityReason: INS_clearFeasibilityReason,
   };
 })();

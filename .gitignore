@@ -1,6 +1,18 @@
 .DS_Store
 node_modules/
-backend/.env
-backend/venv/
-backend/__pycache__/
-backend/**/__pycache__/
+dist/
+.vite/
+.pnpm-store/
+
+# Local secrets — keep .env.example tracked
+.env
+!.env.example
+
+# Python runtime (covers backend/ and legacy-extension/backend/)
+__pycache__/
+*.py[cod]
+venv/
+venv312/
+
+# Unzipped Chrome packages used for local load; tracked artifacts stay as .zip
+release/*/

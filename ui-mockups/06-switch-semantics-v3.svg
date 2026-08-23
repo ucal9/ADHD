@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#e8ebe7"/>
+  <text x="800" y="44" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="600" fill="#44524a">总开关与运行策略 · 三种状态</text>
+  <g transform="translate(48,78)">
+    <rect width="480" height="740" rx="9" fill="#fbfcfa" stroke="#cbd4ce"/>
+    <rect width="480" height="42" rx="9" fill="#f4f6f3"/><circle cx="24" cy="21" r="5" fill="#df7c6f"/><circle cx="41" cy="21" r="5" fill="#d8b35c"/><circle cx="58" cy="21" r="5" fill="#77ae88"/><rect x="115" y="12" width="225" height="19" rx="4" fill="#fff" stroke="#d7dfd8"/>
+    <rect x="0" y="42" width="480" height="698" fill="#f8faf7"/><rect x="28" y="185" width="270" height="25" rx="4" fill="#35423b"/><rect x="28" y="236" width="235" height="8" rx="4" fill="#c4cec7"/><rect x="28" y="263" width="255" height="8" rx="4" fill="#c4cec7"/>
+    <rect x="310" y="68" width="145" height="244" rx="6" fill="#fffdf9" stroke="#ccd4ce" filter="drop-shadow(0 10px 20px #253b331f)"/>
+    <text x="328" y="100" font-family="Arial" font-size="15" font-weight="700" fill="#21463f">▣ 缓读</text><text x="328" y="120" font-family="Arial" font-size="8" fill="#78837d">把阅读调成适合你的样子</text>
+    <rect x="420" y="91" width="26" height="13" rx="7" fill="#c8d0ca"/><circle cx="427" cy="97.5" r="5" fill="#fff"/>
+    <line x1="328" y1="138" x2="438" y2="138" stroke="#e7ece7"/><text x="328" y="166" font-family="Arial" font-size="9" fill="#6e7a72">当前状态</text><text x="328" y="186" font-family="Arial" font-size="11" font-weight="600" fill="#46564d">未开启</text><text x="328" y="221" font-family="Arial" font-size="9" fill="#7b8680">开启后将使用：</text><text x="328" y="242" font-family="Arial" font-size="10" fill="#4f6057">默认运行策略</text><rect x="328" y="263" width="110" height="25" rx="4" fill="#fff" stroke="#c7d8d0"/><text x="383" y="279" text-anchor="middle" font-family="Arial" font-size="9" fill="#197a6d">详细配置　›</text>
+    <text x="240" y="700" text-anchor="middle" font-family="Arial" font-size="12" font-weight="600" fill="#65716a">A · 关闭</text>
+  </g>
+  <g transform="translate(560,78)">
+    <rect width="480" height="740" rx="9" fill="#fbfcfa" stroke="#cbd4ce"/><rect width="480" height="42" rx="9" fill="#f4f6f3"/><circle cx="24" cy="21" r="5" fill="#df7c6f"/><circle cx="41" cy="21" r="5" fill="#d8b35c"/><circle cx="58" cy="21" r="5" fill="#77ae88"/><rect x="115" y="12" width="225" height="19" rx="4" fill="#fff" stroke="#d7dfd8"/>
+    <rect x="0" y="42" width="480" height="698" fill="#f8faf7"/><rect x="28" y="185" width="270" height="25" rx="4" fill="#35423b"/><rect x="28" y="236" width="235" height="8" rx="4" fill="#c4cec7"/><rect x="28" y="263" width="255" height="8" rx="4" fill="#c4cec7"/>
+    <rect x="310" y="68" width="145" height="288" rx="6" fill="#fffdf9" stroke="#ccd4ce" filter="drop-shadow(0 10px 20px #253b331f)"/>
+    <text x="328" y="100" font-family="Arial" font-size="15" font-weight="700" fill="#21463f">▣ 缓读</text><text x="328" y="120" font-family="Arial" font-size="8" fill="#78837d">把阅读调成适合你的样子</text>
+    <rect x="420" y="91" width="26" height="13" rx="7" fill="#1f8b7d"/><circle cx="439" cy="97.5" r="5" fill="#fff"/>
+    <line x1="328" y1="138" x2="438" y2="138" stroke="#e7ece7"/><text x="328" y="166" font-family="Arial" font-size="9" fill="#6e7a72">当前策略</text>
+    <rect x="328" y="177" width="110" height="31" rx="4" fill="#eaf5f0" stroke="#b8d9cd"/><text x="337" y="197" font-family="Arial" font-size="10" font-weight="600" fill="#246d62">严格模式</text><text x="430" y="197" text-anchor="end" font-family="Arial" font-size="8" fill="#477067">全部开启</text>
+    <text x="328" y="231" font-family="Arial" font-size="9" fill="#7b8680">已开启所有已配置功能</text><text x="328" y="261" font-family="Arial" font-size="9" fill="#718078">已隐藏 6 个干扰元素</text><line x1="328" y1="276" x2="438" y2="276" stroke="#e7ece7"/><rect x="328" y="292" width="110" height="25" rx="4" fill="#fff" stroke="#c7d8d0"/><text x="383" y="308" text-anchor="middle" font-family="Arial" font-size="9" fill="#197a6d">详细配置　›</text>
+    <text x="240" y="700" text-anchor="middle" font-family="Arial" font-size="12" font-weight="600" fill="#65716a">B · 严格模式</text>
+  </g>
+  <g transform="translate(1072,78)">
+    <rect width="480" height="740" rx="9" fill="#fbfcfa" stroke="#cbd4ce"/><rect width="480" height="42" rx="9" fill="#f4f6f3"/><circle cx="24" cy="21" r="5" fill="#df7c6f"/><circle cx="41" cy="21" r="5" fill="#d8b35c"/><circle cx="58" cy="21" r="5" fill="#77ae88"/><rect x="115" y="12" width="225" height="19" rx="4" fill="#fff" stroke="#d7dfd8"/>
+    <rect x="0" y="42" width="480" height="698" fill="#f8faf7"/><rect x="28" y="185" width="270" height="25" rx="4" fill="#35423b"/><rect x="28" y="236" width="235" height="8" rx="4" fill="#c4cec7"/><rect x="28" y="263" width="255" height="8" rx="4" fill="#c4cec7"/>
+    <rect x="310" y="68" width="145" height="306" rx="6" fill="#fffdf9" stroke="#ccd4ce" filter="drop-shadow(0 10px 20px #253b331f)"/>
+    <text x="328" y="100" font-family="Arial" font-size="15" font-weight="700" fill="#21463f">▣ 缓读</text><text x="328" y="120" font-family="Arial" font-size="8" fill="#78837d">把阅读调成适合你的样子</text>
+    <rect x="420" y="91" width="26" height="13" rx="7" fill="#1f8b7d"/><circle cx="439" cy="97.5" r="5" fill="#fff"/>
+    <line x1="328" y1="138" x2="438" y2="138" stroke="#e7ece7"/><text x="328" y="166" font-family="Arial" font-size="9" fill="#6e7a72">当前预设</text><rect x="328" y="177" width="110" height="31" rx="4" fill="#eaf5f0" stroke="#b8d9cd"/><text x="337" y="197" font-family="Arial" font-size="10" font-weight="600" fill="#246d62">夜间阅读</text><text x="430" y="197" text-anchor="end" font-family="Arial" font-size="8" fill="#477067">已应用</text>
+    <text x="328" y="231" font-family="Arial" font-size="9" fill="#7b8680">总开关开启时自动应用此预设</text><text x="328" y="261" font-family="Arial" font-size="9" fill="#718078">已隐藏 4 个干扰元素</text><line x1="328" y1="276" x2="438" y2="276" stroke="#e7ece7"/><rect x="328" y="292" width="110" height="25" rx="4" fill="#fff" stroke="#c7d8d0"/><text x="383" y="308" text-anchor="middle" font-family="Arial" font-size="9" fill="#197a6d">切换预设　⌄</text><text x="240" y="700" text-anchor="middle" font-family="Arial" font-size="12" font-weight="600" fill="#65716a">C · 预设模式</text>
+  </g>
+</svg>

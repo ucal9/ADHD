@@ -7,9 +7,13 @@
 由 include_router(ai.router) 注册的 routers/ai.py 接住。
 """
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()
+# Resolve the configuration next to this file so the service behaves the same
+# whether Uvicorn is started from backend/ or from the repository root.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

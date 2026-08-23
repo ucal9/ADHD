@@ -80,12 +80,64 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_findArticleRoot() {
+    const siteAdapters = window.INS_Reader.siteAdapters;
+    const siteRoot = siteAdapters?.findArticleRoot?.();
+    if (siteRoot) return siteRoot;
     const byReadability = INS_findArticleRootViaReadability();
     if (byReadability) return byReadability;
     return INS_pickBestCandidate();
   }
 
+  function INS_firstStandaloneHeading(scope) {
+    const named = scope.querySelector('h1.main-title, .main-title');
+    if (named) return named;
+    const headings = Array.from(scope.querySelectorAll('h1'));
+    return (
+      headings.find(
+        (h) => !h.classList.contains('channel-logo') && !h.closest('nav, aside, [class*="sidebar"]')
+      ) || null
+    );
+  }
+
+  function INS_findMetaNear(scope, title) {
+    const named = scope.querySelector('.date-source, .article-info, .byline');
+    if (named) return named;
+    if (!title || !title.parentElement) return null;
+    return title.parentElement.querySelector('time, .date, .source, .author');
+  }
+
+  // 标题和日期/来源常常在正文根外面。阅读层和降噪保护都走这里，避免裁正文时把标题丢掉。
+  function INS_findHeadline(root) {
+    const scope = root && root.querySelector ? root : document;
+    const fromSite = window.INS_Reader.siteAdapters?.findHeadline?.(scope);
+    if (fromSite && (fromSite.title || fromSite.meta)) {
+      return { title: fromSite.title || null, meta: fromSite.meta || null };
+    }
+    const title = INS_firstStandaloneHeading(scope);
+    return { title, meta: INS_findMetaNear(scope, title) };
+  }
+
+  // 在克隆体里找回与真实页面对应的正文节点。优先站点选择器，其次沿用源节点 id。
+  function INS_findArticleRootIn(root, sourceNode) {
+    if (!root || !root.querySelector) return null;
+    const siteRoot = window.INS_Reader.siteAdapters?.findArticleRootIn?.(root);
+    if (siteRoot) return siteRoot;
+    const sourceId = sourceNode && sourceNode.id;
+    if (sourceId) {
+      try {
+        const escaped = window.CSS && CSS.escape ? CSS.escape(sourceId) : sourceId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const byId = root.querySelector(`#${escaped}`);
+        if (byId) return byId;
+      } catch (error) {
+        // id 含特殊字符时跳过，由调用方用克隆前记下的路径兜底。
+      }
+    }
+    return null;
+  }
+
   window.INS_Reader.articleLocator = {
     findArticleRoot: INS_findArticleRoot,
+    findArticleRootIn: INS_findArticleRootIn,
+    findHeadline: INS_findHeadline,
   };
 })();

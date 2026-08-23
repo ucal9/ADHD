@@ -1,0 +1,310 @@
+<!-- Copyright (c) 2026 Insta360. All rights reserved. -->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>INS_Reader · Demo（模拟网页 + 插件面板）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; background: #e9ece8; }
+
+  .demo-hint {
+    background: #177d72; color: #fff; text-align: center; padding: 8px 16px; font-size: 13px;
+  }
+  .demo-hint b { text-decoration: underline; cursor: pointer; }
+
+  /* ---- 模拟的“普通网页” ---- */
+  .fake-site-nav {
+    background: #1e2723; color: #fff; height: 56px; display: flex; align-items: center;
+    padding: 0 32px; gap: 28px; font-size: 14px;
+  }
+  .fake-site-nav .logo { font-weight: 700; font-size: 18px; margin-right: 20px; }
+  .fake-site-nav a { color: #cfd8d3; text-decoration: none; }
+
+  .fake-banner {
+    background: #b95042; color: #fff; text-align: center; padding: 10px; font-size: 13px;
+  }
+
+  .fake-layout {
+    display: grid; grid-template-columns: 220px 1fr 260px; gap: 0; min-height: 100vh;
+    max-width: 1600px; margin: 0 auto; background: #fff;
+  }
+
+  .fake-sidebar {
+    background: #f6f7f5; border-right: 1px solid #e4e6e2; padding: 24px 18px; font-size: 13px; color: #56625c;
+  }
+  .fake-sidebar h4 { font-size: 12px; color: #87908a; margin: 0 0 10px; }
+  .fake-sidebar .ad-block {
+    margin-top: 30px; background: #e9e6d9; padding: 14px; font-size: 13px; color: #5a5547; line-height: 1.6;
+  }
+
+  main.article {
+    padding: 40px 48px;
+  }
+  main.article .kicker { color: #6c7b73; font-size: 12px; margin-bottom: 10px; }
+  main.article h1 { font-size: 30px; line-height: 1.4; margin: 0 0 16px; color: #202a26; }
+  main.article .byline { color: #7c8580; font-size: 12px; margin-bottom: 24px; }
+  main.article p { font-size: 16px; line-height: 1.9; color: #3b4540; margin: 0 0 18px; }
+
+  .related-recommend {
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+  }
+  .related-recommend h4 { font-size: 13px; color: #6a756e; }
+  .related-recommend .item { padding: 10px 0; font-size: 13px; color: #56625c; border-top: 1px solid #eee; }
+
+  .comment-section {
+    margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e9e4;
+  }
+  .comment-section h4 { font-size: 13px; color: #6a756e; }
+  .comment-section .item { padding: 10px 0; font-size: 13px; color: #56625c; }
+
+  .fake-aside-right {
+    background: #fafbfa; border-left: 1px solid #edf0ec; padding: 24px 18px;
+  }
+  .promo-banner-inline {
+    background: repeating-linear-gradient(120deg, #536660, #536660 2px, #455751 2px 4px);
+    color: #e8f0ec; height: 120px; padding: 16px; font-size: 14px; margin-bottom: 20px;
+  }
+  .fake-aside-right .recommend-card {
+    font-size: 12px; color: #56625c; padding: 10px 0; border-top: 1px solid #e5e9e4;
+  }
+
+  footer.fake-footer {
+    background: #1e2723; color: #97a29c; padding: 30px 48px; font-size: 12px; grid-column: 1 / -1;
+  }
+
+  /* ---- 正文内的干扰元素：与正文平级的横幅/侧栏/页脚不会出现在阅读层里，
+     这些放在 main.article 内部，才能演示对应降噪开关的实际效果 ---- */
+  main.article .ad-block.advert-inline {
+    margin: 10px 0 22px; padding: 14px; background: #e9e6d9; color: #5a5547; font-size: 13px; line-height: 1.6;
+  }
+  main.article aside.fake-sidebar-inline {
+    margin: 0 0 22px; padding: 14px 16px; background: #f2f6f4; border: 1px solid #e2e9e5; font-size: 13px; color: #56625c;
+  }
+  main.article aside.fake-sidebar-inline h4 { margin: 0 0 6px; font-size: 12px; color: #6a756e; }
+  main.article .vip-mask {
+    margin: 0 0 22px; padding: 16px; background: #fff4e9; border: 1px dashed #d9a35b; color: #8a5a1f; font-size: 13px;
+  }
+  main.article .vip-mask a { color: #b9601c; text-decoration: underline; }
+  main.article .video-player-wrap { margin: 0 0 22px; }
+  main.article .video-caption { font-size: 12px; color: #7c8580; margin: 0 0 8px; }
+  main.article .fake-video-player {
+    width: 100%; max-width: 420px; height: 200px; background: #101512; display: block; border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="demo-hint">
+    这是一个模拟的"普通网页"，用来演示 INS_Reader 插件效果 —— <b id="open-panel-btn">点击这里打开 INS_Reader 面板</b>
+  </div>
+
+  <div class="fake-banner">🔥 限时促销广告横幅 · 立即购买享 8 折优惠 · advert-banner</div>
+
+  <nav class="fake-site-nav">
+    <span class="logo">FakeNews 日报</span>
+    <a href="#">首页</a><a href="#">科技</a><a href="#">财经</a><a href="#">生活</a><a href="#">视频</a>
+  </nav>
+
+  <div class="fake-layout">
+    <aside class="fake-sidebar">
+      <h4>热门分类</h4>
+      <p>科技前沿</p><p>财经观察</p><p>生活方式</p><p>深度报道</p>
+      <div class="ad-block advert-block">
+        <em>广告推广</em><br />
+        这是一段侧边栏广告文案，用来测试降噪功能是否能正确识别并隐藏它。
+      </div>
+    </aside>
+
+    <main class="article">
+      <p class="kicker">科技 · 深度</p>
+      <h1>为什么"无干扰阅读"正在成为新的产品设计趋势</h1>
+      <p class="byline">作者：编辑部 · 5 分钟阅读</p>
+
+      <aside class="fake-sidebar-inline">
+        <h4>本文导读</h4>
+        <p>① 无干扰阅读趋势　② 技术实现　③ Demo 演示</p>
+      </aside>
+
+      <p>过去十年，互联网内容平台在商业化压力下不断堆叠推荐位、悬浮广告、订阅弹窗与社交分享按钮，用户的注意力被切割得越来越碎。对于注意力容易被打断的用户（例如 ADHD 群体）来说，这种"信息过载"的网页设计几乎是不友好的。</p>
+
+      <div class="ad-block advert-inline">
+        <em>广告</em>——某某效率工具限时 5 折，立即抢购 »
+      </div>
+
+      <p>"INS_Reader"这类阅读模式插件的核心思路很简单：识别页面中的正文主体，隐藏与阅读无关的干扰元素，再根据用户的个人偏好重新排版——包括字号、行距、内容宽度与配色主题。这不是一个全新的想法，Firefox 的阅读模式、Safari 的阅读器、Edge 的沉浸式阅读器都是同类实践，但把它做成一个可以在任意网站生效、且高度可自定义的浏览器插件，仍然有明确的产品价值。</p>
+
+      <div class="vip-mask">
+        🔒 登录后可继续阅读全文，<a href="#">立即登录 / 开通会员</a>
+      </div>
+
+      <p>技术实现上，正文识别通常借助 Mozilla 开源的 Readability.js（Firefox 阅读模式同款算法），通过文本密度、链接密度、DOM 结构等特征打分，定位出页面中"最像正文"的区块。而干扰元素的识别，则可以用一组启发式规则——常见的广告、侧边栏、评论区、弹窗横幅在类名、标签语义上都有较强的规律性，可以在不依赖机器学习的情况下达到不错的准确率。</p>
+
+      <div class="video-player-wrap">
+        <p class="video-caption">▶ 文章配图视频（自动播放示例，静音循环）</p>
+        <video id="demo-autoplay-video" class="fake-video-player" autoplay muted loop playsinline></video>
+      </div>
+
+      <p>本 Demo 页面故意包含了顶部促销横幅、正文内广告、导读侧栏、会员登录墙、自动播放视频、右侧推荐卡片与底部评论区，用来直观演示"降噪"功能开启前后的对比效果。你可以点击右上角面板中的开关，实时观察这些元素被隐藏、恢复的过程。</p>
+
+      <div class="related-recommend">
+        <h4>相关推荐</h4>
+        <div class="item">《大厂如何设计无障碍阅读体验》</div>
+        <div class="item">《注意力经济下的产品伦理》</div>
+      </div>
+
+      <div class="comment-section">
+        <h4>评论区（3）</h4>
+        <div class="item">读者A：这个思路很实用，希望能支持更多网站。</div>
+        <div class="item">读者B：字号调节这个功能太需要了。</div>
+        <div class="item">读者C：降噪之后阅读体验确实好很多。</div>
+      </div>
+    </main>
+
+    <aside class="fake-aside-right">
+      <div class="promo-banner-inline">📺 推荐视频广告位</div>
+      <div class="recommend-card">今日热榜 #1：AI 写作工具测评</div>
+      <div class="recommend-card">今日热榜 #2：远程办公效率指南</div>
+      <div class="recommend-card">今日热榜 #3：极简主义生活方式</div>
+    </aside>
+
+    <footer class="fake-footer">
+      © 2026 FakeNews 日报 · 本页面仅用于演示，非真实新闻站点
+    </footer>
+  </div>
+
+  <!-- ---- Mock chrome.* API，让 content.js 在无插件环境下也能运行 ---- -->
+  <script>
+    (function () {
+      const memoryStore = {};
+      window.chrome = {
+        storage: {
+          sync: {
+            get(keys, callback) {
+              const result = {};
+              (Array.isArray(keys) ? keys : [keys]).forEach((k) => {
+                if (memoryStore[k] !== undefined) result[k] = memoryStore[k];
+              });
+              callback(result);
+            },
+            set(items, callback) {
+              Object.assign(memoryStore, items);
+              if (callback) callback();
+            },
+          },
+        },
+        runtime: {
+          id: 'demo-mock',
+          onMessage: {
+            _listeners: [],
+            addListener(fn) {
+              this._listeners.push(fn);
+            },
+            _dispatch(msg) {
+              this._listeners.forEach((fn) => fn(msg));
+            },
+          },
+          // demo 环境没有真正的 background service worker，这里直接模拟它
+          // 转发请求的效果：file:// 页面没有 CSP 限制，可以直接 fetch。
+          async sendMessage(msg) {
+            const startedAt = performance.now();
+            console.log('[INS_Reader][demo-mock] sendMessage 被调用', {
+              runtimeId: this.id,
+              messageType: msg && msg.type,
+              textLength: msg && msg.payload ? msg.payload.text.length : undefined,
+              href: location.href,
+              origin: location.origin,
+            });
+            if (msg?.type !== 'INS_READER_AI_SUMMARIZE') {
+              console.log('[INS_Reader][demo-mock] 非摘要消息，直接返回 null');
+              return null;
+            }
+            try {
+              console.log('[INS_Reader][demo-mock] 准备 fetch 后端');
+              const resp = await fetch('http://localhost:8000/v1/ai/summarize', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(msg.payload),
+              });
+              const body = await resp.json().catch(() => null);
+              console.log('[INS_Reader][demo-mock] fetch 返回', {
+                elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+                status: resp.status,
+                ok: resp.ok,
+              });
+              if (!resp.ok) {
+                const detail = (body && body.detail) || `AI 服务出错（${resp.status}）`;
+                return { ok: false, status: resp.status, detail };
+              }
+              if (!body || typeof body.result !== 'string') {
+                console.error('[INS_Reader][demo-mock] 后端返回 200 但 result 格式异常', {
+                  bodyType: body === null ? 'null' : typeof body,
+                  resultType: body && typeof body.result,
+                });
+                return { ok: false, status: 502, detail: 'AI 服务返回格式异常' };
+              }
+              console.log('[INS_Reader][demo-mock] 摘要成功', {
+                resultLength: body.result.length,
+              });
+              return { ok: true, result: body.result };
+            } catch (err) {
+              console.error('[INS_Reader][demo-mock] fetch 失败', {
+                elapsed: `${Math.round(performance.now() - startedAt)}ms`,
+                name: err && err.name,
+                message: err && err.message,
+              });
+              return { ok: false, status: 0, detail: '无法连接 AI 服务，请确认后端已启动' };
+            }
+          },
+        },
+      };
+    })();
+  </script>
+
+  <script src="vendor/readability.js"></script>
+  <script src="src/modules/prefs-store.js"></script>
+  <script src="src/modules/article-locator.js"></script>
+  <script src="src/modules/feasibility.js"></script>
+  <script src="src/modules/page-meta.js"></script>
+  <script src="src/modules/noise-filter.js"></script>
+  <script src="src/modules/dom-path.js"></script>
+  <script src="src/modules/reading-stats.js"></script>
+  <script src="src/modules/ai-client.js"></script>
+  <script src="src/modules/reader-layer.js"></script>
+  <script src="src/modules/panel-ui.js"></script>
+  <script src="src/content.js"></script>
+  <script>
+    document.getElementById('open-panel-btn').addEventListener('click', () => {
+      window.chrome.runtime.onMessage._dispatch({ type: 'INS_READER_TOGGLE_PANEL' });
+    });
+  </script>
+
+  <!-- ---- 用 canvas.captureStream() 现场生成一段会动的画面喂给 <video autoplay>，
+       不依赖任何外部视频资源，用来演示"暂停自动播放"/"屏蔽所有视频"两个降噪开关 ---- -->
+  <script>
+    (function () {
+      const video = document.getElementById('demo-autoplay-video');
+      const canvas = document.createElement('canvas');
+      canvas.width = 420;
+      canvas.height = 200;
+      const ctx = canvas.getContext('2d');
+      let t = 0;
+      setInterval(() => {
+        t += 1;
+        ctx.fillStyle = '#101512';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const x = 60 + (Math.sin(t / 20) * 0.5 + 0.5) * (canvas.width - 120);
+        ctx.fillStyle = '#83cfc0';
+        ctx.beginPath();
+        ctx.arc(x, canvas.height / 2, 24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#5a6a64';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('DEMO AUTOPLAY VIDEO', 14, 22);
+      }, 1000 / 30);
+      video.srcObject = canvas.captureStream(30);
+      video.play().catch(() => {});
+    })();
+  </script>
+</body>
+</html>
