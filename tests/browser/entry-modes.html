@@ -1,8 +1,7 @@
 <!doctype html>
 <!-- 缓读 · 入口模式本地验证页（仅开发用，不属于插件运行时）
-     验证：默认模式全开；从未激活进详细配置套全关且开关可点；
-     开一项降噪二级只带起降噪一级；已激活后再进详细配置不清空；
-     仅开排版时在真实页面注入样式。 -->
+     验证：默认模式全开；从未激活进详细配置套全关；一级关闭时二级置灰但可点醒一级；
+     已激活后再进详细配置不清空；仅开排版时在真实页面注入样式。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -109,12 +108,20 @@
   check('详细配置套全关后侧栏关', prefs.noiseOptions.sidebar === false);
   check('详细配置套全关后简化关', prefs.aiHighlight.simplifySentences === false);
 
-  const switches = Array.from(shadow().querySelectorAll('.switch'));
-  check('详细配置开关均可点', switches.length > 0 && switches.every((btn) => !btn.disabled));
-  check('详细配置没有置灰菜单', !shadow().querySelector('.is-disabled'));
+  const masterRoles = ['typography-master-switch', 'ai-master-switch', 'noise-master-switch'];
+  check(
+    '详细配置一级开关均可点',
+    masterRoles.every((role) => {
+      const btn = shadow().querySelector(`[data-role="${role}"]`);
+      return btn && !btn.disabled;
+    })
+  );
   check('详细配置露出默认模式', !!shadow().querySelector('[data-default-preset]'));
-
+  check('全关时排版组置灰', !!shadow().querySelector('#typography-menu.is-disabled'));
   const sidebarBtn = shadow().querySelector('[data-noise-key="sidebar"]');
+  check('全关时降噪二级置灰可点', sidebarBtn?.disabled === false && sidebarBtn?.classList.contains('is-locked') === true);
+  check('全关时 AI 二级置灰可点', shadow().querySelector('[data-ai-feature="simplifyParagraphs"]')?.disabled === false && shadow().querySelector('[data-ai-feature="simplifyParagraphs"]')?.classList.contains('is-locked') === true);
+
   sidebarBtn.click();
   check('开一项降噪二级后降噪一级开启', prefs.noiseReduction === true);
   check('开一项降噪二级后其它降噪仍关', prefs.noiseOptions.comments === false && prefs.noiseOptions.banners === false);

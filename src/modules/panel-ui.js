@@ -116,27 +116,16 @@ window.INS_Reader = window.INS_Reader || {};
     return Number(value.toFixed(digits));
   }
 
+  // on 只表示旋钮左右；locked 只表示一级关闭时的置灰。锁定时仍可点，用来把一级带起来。
+  function INS_switchClass({ on, locked, small = true }) {
+    return ['switch', small ? 'small' : '', on ? 'on' : '', locked ? 'is-locked' : '']
+      .filter(Boolean)
+      .join(' ');
+  }
+
   function INS_markCustomized(prefs) {
     prefs.hasCustomized = true;
     prefs.activePreset = '';
-  }
-
-  // 一级模块重新开启时，恢复该模块所有二级开关；不重置排版数值、配色等用户配置，
-  // 也不主动触发 AI 请求，避免一次点击产生未经确认的内容上传或改写。
-  function INS_enableAllNoiseOptions(prefs) {
-    Object.keys(prefs.noiseOptions || {}).forEach((key) => {
-      prefs.noiseOptions[key] = true;
-    });
-  }
-
-  function INS_enableAllAiFeatures(prefs) {
-    prefs.aiSummary = true;
-    Object.assign(prefs.aiHighlight, {
-      enabled: true,
-      breakLongParagraphs: true,
-      simplifySentences: true,
-      markKeyInfo: true,
-    });
   }
 
   function INS_ensureTypographyOn(prefs) {
@@ -409,7 +398,9 @@ window.INS_Reader = window.INS_Reader || {};
     const host = INS_ensurePanelHost();
     let shadow = host.shadowRoot;
     if (!shadow) shadow = host.attachShadow({ mode: 'open' });
-    const isFirstOpen = !shadow.querySelector('.ins-reader-panel');
+    const existingPanel = shadow.querySelector('.ins-reader-panel');
+    const isFirstOpen = !existingPanel;
+    const savedScrollTop = existingPanel ? existingPanel.scrollTop : 0;
     shadow.innerHTML = '';
 
     const style = document.createElement('style');
@@ -425,6 +416,9 @@ window.INS_Reader = window.INS_Reader || {};
 
     // 降噪开关的展示顺序与 noise-filter 的 UI_NOISE_KEYS 保持一致。
     const noiseOrder = window.INS_Reader.noiseFilter.UI_NOISE_KEYS;
+    const typoOff = prefs.typographyEnabled === false;
+    const aiLocked = !prefs.aiEnabled;
+    const noiseLocked = !prefs.noiseReduction;
 
     const feasibilityReason = readerLayer.getLastFeasibilityReason();
     const feasibilityMessages = {
@@ -487,9 +481,9 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="typography">
           <div class="group-header ${state.expandedMenus.typography ? 'open' : ''}" data-role="typography-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.typography}" aria-controls="typography-menu">
             <span class="group-label">${MODULE_ICONS.typography}<span>舒适排版</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.typographyEnabled !== false ? 'on' : ''}" data-role="typography-master-switch" aria-label="舒适排版开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="${INS_switchClass({ on: prefs.typographyEnabled !== false, locked: false })}" data-role="typography-master-switch" aria-label="舒适排版开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
-          <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''}" data-role="typography-menu" role="region">
+          <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''} ${typoOff ? 'is-disabled' : ''}" data-role="typography-menu" role="region">
             <div class="setting">
               <span>页面底色</span>
               <div class="bg-swatches">
@@ -541,7 +535,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="ai">
           <div class="group-header ${state.expandedMenus.ai ? 'open' : ''}" data-role="ai-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.ai}" aria-controls="ai-menu">
             <span class="group-label">${MODULE_ICONS.ai}<span>AI 内容助手</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="${INS_switchClass({ on: prefs.aiEnabled, locked: false })}" data-role="ai-master-switch" aria-label="AI 内容助手开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
           <div id="ai-menu" class="group-content ${state.expandedMenus.ai ? 'expanded' : ''}" data-role="ai-menu" role="region">
             ${
@@ -551,7 +545,7 @@ window.INS_Reader = window.INS_Reader || {};
               </div>
 
                 <p class="ai-hint">正文将发送到缓读后端生成摘要，不会用于其他用途。</p>
-                <button class="ai-generate" data-role="ai-generate">${
+                <button class="ai-generate" data-role="ai-generate" ${aiLocked ? 'disabled' : ''}>${
                   readerLayer.getSummary() ? '重新生成摘要' : '生成摘要'
                 }</button>
                 <div class="ai-progress" data-role="ai-progress" hidden><div class="ai-progress-bar"></div></div>
@@ -559,11 +553,11 @@ window.INS_Reader = window.INS_Reader || {};
 
               <div class="ai-row">
                 <span>简化段落长句</span>
-                <button class="switch small ${prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences ? 'on' : ''}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句"><span></span></button>
+                <button class="${INS_switchClass({ on: !!(prefs.aiHighlight?.breakLongParagraphs && prefs.aiHighlight?.simplifySentences), locked: aiLocked })}" data-ai-feature="simplifyParagraphs" aria-label="简化段落长句"><span></span></button>
               </div>
               <div class="ai-row">
                 <span>高亮核心信息</span>
-                <button class="switch small ${prefs.aiHighlight?.markKeyInfo ? 'on' : ''}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息"><span></span></button>
+                <button class="${INS_switchClass({ on: !!prefs.aiHighlight?.markKeyInfo, locked: aiLocked })}" data-ai-feature="markKeyInfo" aria-label="高亮核心信息"><span></span></button>
               </div>
 
             `
@@ -574,7 +568,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="noise">
           <div class="group-header ${state.expandedMenus.noise ? 'open' : ''}" data-role="noise-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.noise}" aria-controls="noise-menu">
             <span class="group-label">${MODULE_ICONS.noise}<span>动态降噪</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="动态降噪开关"><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><button class="${INS_switchClass({ on: prefs.noiseReduction, locked: false })}" data-role="noise-master-switch" aria-label="动态降噪开关"><span></span></button><span class="group-icon">›</span></span>
           </div>
           <div id="noise-menu" class="group-content ${state.expandedMenus.noise ? 'expanded' : ''}" data-role="noise-menu" role="region">
             ${noiseOrder
@@ -582,7 +576,7 @@ window.INS_Reader = window.INS_Reader || {};
                 (key) => `
               <div class="noise-row">
                 <span>${noiseLabels[key]}</span>
-                <button class="switch small ${prefs.noiseOptions[key] ? 'on' : ''}" data-noise-key="${key}"><span></span></button>
+                <button class="${INS_switchClass({ on: !!prefs.noiseOptions[key], locked: noiseLocked })}" data-noise-key="${key}"><span></span></button>
                 </div>`
               )
               .join('')}
@@ -607,6 +601,7 @@ window.INS_Reader = window.INS_Reader || {};
 
     panel.innerHTML = panelHTML;
     shadow.appendChild(panel);
+    if (!isFirstOpen) panel.scrollTop = savedScrollTop;
 
     // 概览文本用 textContent 写入
     const overviewBodyEl = panel.querySelector('[data-role="overview-body"]');
@@ -771,7 +766,6 @@ window.INS_Reader = window.INS_Reader || {};
         e.stopPropagation();
         const enableNoise = !prefs.noiseReduction;
         prefs.noiseReduction = enableNoise;
-        if (enableNoise) INS_enableAllNoiseOptions(prefs);
         INS_markCustomized(prefs);
         prefsStore.syncEnabled(prefs);
         prefsStore.save();
@@ -796,11 +790,10 @@ window.INS_Reader = window.INS_Reader || {};
 
     const aiMasterSwitch = panel.querySelector('[data-role="ai-master-switch"]');
     if (aiMasterSwitch) {
-      aiMasterSwitch.addEventListener('click', (e) => {
+      aiMasterSwitch.addEventListener('click', async (e) => {
         e.stopPropagation();
         const enableAi = !prefs.aiEnabled;
         prefs.aiEnabled = enableAi;
-        if (enableAi) INS_enableAllAiFeatures(prefs);
         INS_markCustomized(prefs);
         prefsStore.syncEnabled(prefs);
         prefsStore.save();
@@ -810,6 +803,11 @@ window.INS_Reader = window.INS_Reader || {};
         }
         appController.applyAll();
         INS_render();
+        if (enableAi) {
+          const simplifyOn = prefs.aiHighlight.breakLongParagraphs && prefs.aiHighlight.simplifySentences;
+          if (simplifyOn) await INS_toggleAiFeature('simplify', true);
+          if (prefs.aiHighlight.markKeyInfo) await INS_toggleAiFeature('keyinfo', true);
+        }
       });
     }
 
@@ -818,14 +816,23 @@ window.INS_Reader = window.INS_Reader || {};
     panel.querySelectorAll('[data-ai-feature]').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (btn.disabled) return;
         const feature = btn.getAttribute('data-ai-feature');
         INS_markCustomized(prefs);
+        if (!prefs.aiEnabled) {
+          if (feature === 'simplifyParagraphs') INS_setAiFeaturePref(prefs, 'simplify', true);
+          else if (feature === 'markKeyInfo') INS_setAiFeaturePref(prefs, 'keyinfo', true);
+          prefs.aiEnabled = true;
+          prefsStore.syncEnabled(prefs);
+          prefsStore.save();
+          INS_render();
+          if (feature === 'simplifyParagraphs') await INS_toggleAiFeature('simplify', true);
+          else if (feature === 'markKeyInfo') await INS_toggleAiFeature('keyinfo', true);
+          return;
+        }
         if (feature === 'simplifyParagraphs') {
           const next = !(prefs.aiHighlight.breakLongParagraphs && prefs.aiHighlight.simplifySentences);
           INS_setAiFeaturePref(prefs, 'simplify', next);
-          if (next) prefs.aiEnabled = true;
-          else if (!prefsStore.anyAiFeatureOn(prefs)) prefs.aiEnabled = false;
+          if (!prefsStore.anyAiFeatureOn(prefs)) prefs.aiEnabled = false;
           prefsStore.syncEnabled(prefs);
           prefsStore.save();
           INS_render();
@@ -835,8 +842,7 @@ window.INS_Reader = window.INS_Reader || {};
         if (feature === 'markKeyInfo') {
           const next = !prefs.aiHighlight.markKeyInfo;
           INS_setAiFeaturePref(prefs, 'keyinfo', next);
-          if (next) prefs.aiEnabled = true;
-          else if (!prefsStore.anyAiFeatureOn(prefs)) prefs.aiEnabled = false;
+          if (!prefsStore.anyAiFeatureOn(prefs)) prefs.aiEnabled = false;
           prefsStore.syncEnabled(prefs);
           prefsStore.save();
           INS_render();
@@ -868,8 +874,7 @@ window.INS_Reader = window.INS_Reader || {};
     const progressEl = panel.querySelector('[data-role="ai-progress"]');
     if (generateBtn) {
       generateBtn.addEventListener('click', async () => {
-        if (generateBtn.disabled) return;
-        prefs.aiEnabled = true;
+        if (generateBtn.disabled || !prefs.aiEnabled) return;
         prefs.aiSummary = true;
         prefsStore.syncEnabled(prefs);
         prefsStore.save();
@@ -994,9 +999,14 @@ window.INS_Reader = window.INS_Reader || {};
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
         const key = btn.getAttribute('data-noise-key');
-        prefs.noiseOptions[key] = !prefs.noiseOptions[key];
-        if (prefs.noiseOptions[key]) prefs.noiseReduction = true;
-        else if (!prefsStore.anyNoiseUiOn(prefs)) prefs.noiseReduction = false;
+        if (!prefs.noiseReduction) {
+          prefs.noiseOptions[key] = true;
+          prefs.noiseReduction = true;
+        } else {
+          prefs.noiseOptions[key] = !prefs.noiseOptions[key];
+          if (prefs.noiseOptions[key]) prefs.noiseReduction = true;
+          else if (!prefsStore.anyNoiseUiOn(prefs)) prefs.noiseReduction = false;
+        }
         INS_markCustomized(prefs);
         prefsStore.syncEnabled(prefs);
         prefsStore.save();
@@ -1198,7 +1208,7 @@ window.INS_Reader = window.INS_Reader || {};
     .highlight-option label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #555555; cursor: pointer; }
     .highlight-option input[type="checkbox"] { cursor: pointer; }
     .switch {
-      cursor: pointer; background: #c8d0ca; border: 0; border-radius: 999px;
+      cursor: pointer; background: #FFF3CC; border: 0; border-radius: 999px;
       width: 33px; height: 18px; padding: 2px; transition: background 0.18s;
     }
     .switch span { display: block; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.18s; box-shadow: 0 1px 2px rgba(0,0,0,0.13); }
@@ -1208,6 +1218,7 @@ window.INS_Reader = window.INS_Reader || {};
     .switch.small span { width: 11px; height: 11px; }
     .switch.small.on span { transform: translateX(12px); }
     .switch:disabled { opacity: 0.52; cursor: not-allowed; filter: grayscale(1); }
+    .switch.is-locked { opacity: 0.52; cursor: pointer; filter: grayscale(1); }
     .restore {
       width: 100%; height: 30px; margin: 15px 0 0; display: flex; align-items: center; justify-content: center;
       color: #333333; background: #fff; border: 1px solid #DCDCDC; border-radius: 4px; cursor: pointer; font-size: 12px;

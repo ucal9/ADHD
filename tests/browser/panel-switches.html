@@ -1,0 +1,200 @@
+<!doctype html>
+<!-- 缓读 · 面板开关与滚动本地验证页（仅开发用，不属于插件运行时）
+     验证：改细分后面板不跳顶；一级关时二级只置灰且旋钮位置不变；
+     一级开、二级关时轨道浅黄且不置灰。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>面板开关与滚动验证</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 24px; font-size: 16px; line-height: 1.5; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <h1 class="main-title">面板开关测试标题</h1>
+  <article id="article">
+    <p>
+      缓读会在真实网页上重构正文排版并降低视觉噪音，这一段需要足够长才能通过可行性检查。
+      详细配置里展开舒适排版后改字号不能把面板滚回顶部。一级关闭时二级只置灰、左右位置不变。
+      一级开启时关闭二级只把旋钮拨到左侧，轨道为浅黄、不置灰。再补一段说明让正文长度稳定超过阈值：
+      降噪作用在真实页面隐藏上，每个按钮对应一类节点，关一级时整页原样保留。
+    </p>
+  </article>
+  <aside id="page-sidebar">侧栏</aside>
+  <div id="log"></div>
+
+<script>
+  let storedPrefs = {};
+  window.chrome = {
+    runtime: { id: 'test-harness', lastError: undefined, sendMessage: () => Promise.resolve({ ok: true }) },
+    storage: {
+      sync: {
+        get: (k, cb) => cb({ ins_reader_prefs_v1: storedPrefs }),
+        set: (obj) => {
+          const key = Object.keys(obj)[0];
+          storedPrefs = obj[key];
+        },
+      },
+    },
+  };
+</script>
+<script src="../../src/modules/prefs-store.js"></script>
+<script src="../../src/modules/article-locator.js"></script>
+<script src="../../src/modules/feasibility.js"></script>
+<script src="../../src/modules/page-meta.js"></script>
+<script src="../../src/modules/noise-filter.js"></script>
+<script src="../../src/modules/dom-path.js"></script>
+<script src="../../src/modules/reading-stats.js"></script>
+<script src="../../src/modules/ai-client.js"></script>
+<script src="../../src/modules/ai-enhance.js"></script>
+<script src="../../src/modules/ai-card.js"></script>
+<script src="../../src/modules/reader-layer.js"></script>
+<script src="../../src/modules/panel-ui.js"></script>
+<script>
+(async function () {
+  const out = [];
+  const check = (name, cond, extra = '') => {
+    out.push(`${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`);
+    if (!cond) window.__failed = true;
+  };
+  const isPaleYellow = (el) => {
+    const color = getComputedStyle(el).backgroundColor.replace(/\s/g, '');
+    return color === 'rgb(255,243,204)' || color === 'rgba(255,243,204,1)';
+  };
+
+  const { prefsStore, panelUI, noiseFilter } = window.INS_Reader;
+
+  function applyAll() {
+    const prefs = prefsStore.get();
+    prefsStore.syncEnabled(prefs);
+    if (!prefs.enabled) {
+      window.INS_Reader.readerLayer.remove();
+      return;
+    }
+    if (window.INS_Reader.readerLayer.render()) window.INS_Reader.readerLayer.lockOriginalPage();
+    else window.INS_Reader.readerLayer.unlockOriginalPage();
+  }
+
+  window.INS_Reader.appController = {
+    applyAll,
+    restoreOriginalPage: applyAll,
+    deactivateReadingMode: applyAll,
+  };
+  window.INS_Reader.articleLocator.findArticleRoot = () => document.getElementById('article');
+
+  await prefsStore.load();
+  const prefs = prefsStore.get();
+  panelUI.openQuick();
+  const panelHost = document.getElementById('ins-reader-panel-host');
+  const shadow = () => panelHost.shadowRoot;
+  shadow().querySelector('[data-role="expand-btn"]').click();
+
+  shadow().querySelector('[data-role="typography-master-switch"]').click();
+  shadow().querySelector('[data-role="typography-toggle"]').click();
+  shadow().querySelector('[data-role="ai-toggle"]').click();
+  shadow().querySelector('[data-role="noise-toggle"]').click();
+
+  const panelBefore = shadow().querySelector('.ins-reader-panel');
+  check(
+    '展开三组后面板可滚动',
+    panelBefore.scrollHeight - panelBefore.clientHeight > 20,
+    `scrollHeight=${panelBefore.scrollHeight} clientHeight=${panelBefore.clientHeight}`
+  );
+  const targetScroll = Math.min(120, Math.max(0, panelBefore.scrollHeight - panelBefore.clientHeight));
+  panelBefore.scrollTop = targetScroll;
+  const before = panelBefore.scrollTop;
+  check('测试前滚动不在顶部', before > 0, `scrollTop=${before}`);
+  shadow().querySelector('[data-step-key="fontSize"][data-step-dir="1"]').click();
+  const afterScroll = shadow().querySelector('.ins-reader-panel').scrollTop;
+  check('改字号后面板不回到顶部', Math.abs(afterScroll - before) < 2, `before=${before} after=${afterScroll}`);
+
+  prefs.noiseReduction = false;
+  prefs.noiseOptions.sidebar = true;
+  prefs.noiseOptions.comments = true;
+  prefs.aiEnabled = false;
+  prefs.aiHighlight.breakLongParagraphs = true;
+  prefs.aiHighlight.simplifySentences = true;
+  prefs.aiHighlight.markKeyInfo = true;
+  prefsStore.save();
+  panelUI.render();
+
+  const sidebarLocked = shadow().querySelector('[data-noise-key="sidebar"]');
+  check('一级关时降噪二级仍是 on', sidebarLocked?.classList.contains('on') === true);
+  check('一级关时降噪二级置灰', sidebarLocked?.classList.contains('is-locked') === true);
+  check('一级关时降噪二级仍可点', sidebarLocked?.disabled === false);
+  check('一级关时降噪二级 prefs 未清掉', prefs.noiseOptions.sidebar === true);
+
+  const simplifyLocked = shadow().querySelector('[data-ai-feature="simplifyParagraphs"]');
+  const keyinfoLocked = shadow().querySelector('[data-ai-feature="markKeyInfo"]');
+  check('一级关时简化仍是 on', simplifyLocked?.classList.contains('on') === true);
+  check('一级关时简化置灰可点', simplifyLocked?.disabled === false && simplifyLocked?.classList.contains('is-locked') === true);
+  check('一级关时高亮仍是 on', keyinfoLocked?.classList.contains('on') === true);
+  check('一级关时高亮置灰可点', keyinfoLocked?.disabled === false && keyinfoLocked?.classList.contains('is-locked') === true);
+
+  sidebarLocked.click();
+  check('一级关时点已开二级会带起一级', prefs.noiseReduction === true);
+  check('带起一级后该项仍开', prefs.noiseOptions.sidebar === true);
+  check('带起一级后二级不再置灰', shadow().querySelector('[data-noise-key="sidebar"]')?.classList.contains('is-locked') === false);
+
+  prefs.noiseReduction = false;
+  prefs.noiseOptions.sidebar = true;
+  prefs.noiseOptions.comments = false;
+  prefs.noiseOptions.banners = true;
+  prefs.noiseOptions.blockAllVideos = false;
+  prefsStore.save();
+  panelUI.render();
+  shadow().querySelector('[data-role="noise-master-switch"]').click();
+  check('再开一级不把二级全开', prefs.noiseOptions.sidebar === true && prefs.noiseOptions.comments === false && prefs.noiseOptions.banners === true && !prefs.noiseOptions.blockAllVideos);
+  check('再开一级后开着的二级仍是 on', shadow().querySelector('[data-noise-key="sidebar"]')?.classList.contains('on') === true);
+  check('再开一级后开着的二级不再置灰', shadow().querySelector('[data-noise-key="sidebar"]')?.classList.contains('is-locked') === false);
+  check('再开一级后关着的二级仍关', shadow().querySelector('[data-noise-key="comments"]')?.classList.contains('on') === false);
+  check('再开一级后关着的二级是浅黄', isPaleYellow(shadow().querySelector('[data-noise-key="comments"]')), getComputedStyle(shadow().querySelector('[data-noise-key="comments"]')).backgroundColor);
+
+  prefs.typographyEnabled = false;
+  prefs.noiseReduction = false;
+  prefsStore.syncEnabled(prefs);
+  prefsStore.save();
+  panelUI.render();
+  check('排版关时组置灰', !!shadow().querySelector('#typography-menu.is-disabled'));
+  check('排版关时色板仍可点', shadow().querySelector('[data-swatch-bg]')?.disabled === false);
+  const plusBtn = shadow().querySelector('[data-step-key="fontSize"][data-step-dir="1"]');
+  plusBtn.click();
+  check('排版关时点步进会带起一级', prefs.typographyEnabled === true);
+
+  prefs.noiseReduction = true;
+  prefs.noiseOptions.sidebar = false;
+  prefs.aiEnabled = true;
+  prefs.aiHighlight.breakLongParagraphs = false;
+  prefs.aiHighlight.simplifySentences = false;
+  prefs.aiHighlight.markKeyInfo = false;
+  prefs.typographyEnabled = true;
+  prefsStore.syncEnabled(prefs);
+  prefsStore.save();
+  panelUI.render();
+
+  const sidebarOff = shadow().querySelector('[data-noise-key="sidebar"]');
+  check('一级开二级关没有 on', sidebarOff?.classList.contains('on') === false);
+  check('一级开二级关可点', sidebarOff?.disabled === false);
+  check('一级开二级关是浅黄轨道', isPaleYellow(sidebarOff), getComputedStyle(sidebarOff).backgroundColor);
+
+  const simplifyOff = shadow().querySelector('[data-ai-feature="simplifyParagraphs"]');
+  check('AI 一级开二级关没有 on', simplifyOff?.classList.contains('on') === false);
+  check('AI 一级开二级关可点', simplifyOff?.disabled === false);
+  check('AI 一级开二级关是浅黄轨道', isPaleYellow(simplifyOff), getComputedStyle(simplifyOff).backgroundColor);
+
+  const noiseMaster = shadow().querySelector('[data-role="noise-master-switch"]');
+  check('一级开时自己是 on', noiseMaster?.classList.contains('on') === true);
+  check('一级开时自己可点', noiseMaster?.disabled === false);
+
+  document.getElementById('log').textContent = out.join('\n') +
+    `\n\n${window.__failed ? 'FAILED' : 'ALL PASSED'}`;
+  window.__done = true;
+})().catch((err) => {
+  document.getElementById('log').textContent = 'THREW: ' + err.message + '\n' + err.stack;
+  window.__done = true;
+  window.__failed = true;
+});
+</script>
+</body>
+</html>
