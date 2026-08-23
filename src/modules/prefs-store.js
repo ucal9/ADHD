@@ -56,11 +56,6 @@ window.INS_Reader = window.INS_Reader || {};
           customColors: { ...DEFAULT_PREFS.customColors, ...(stored.customColors || {}) },
           aiHighlight: { ...DEFAULT_PREFS.aiHighlight, ...(stored.aiHighlight || {}) },
         };
-        // 模块级开关已从二级页面移除，子功能现在直接控制效果。
-        // 将旧版本保存的模块关闭状态迁移为启用，避免旧配置让子菜单失效。
-        state.prefs.typographyEnabled = true;
-        state.prefs.aiEnabled = true;
-        state.prefs.noiseReduction = true;
         if (!state.prefs.deviceId) {
           state.prefs.deviceId = crypto.randomUUID();
           INS_save();

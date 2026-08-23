@@ -18,6 +18,9 @@
 window.INS_Reader = window.INS_Reader || {};
 
 (function () {
+  const LIVE_TYPO_ATTR = 'data-ins-typography';
+  const LIVE_TYPO_STYLE_ID = 'ins-reader-live-typography-style';
+
   const state = {
     readerHost: null,
     articleSourceRoot: null, // 原页面中定位到的正文节点（只读，从不修改）
@@ -133,6 +136,51 @@ window.INS_Reader = window.INS_Reader || {};
     }
   }
 
+  function INS_clearLiveTypography() {
+    document.querySelectorAll(`[${LIVE_TYPO_ATTR}]`).forEach((el) => {
+      el.removeAttribute(LIVE_TYPO_ATTR);
+    });
+    const style = document.getElementById(LIVE_TYPO_STYLE_ID);
+    if (style) style.remove();
+  }
+
+  // 实时模式只覆盖正文文字样式，不修改 display/position/width/grid 等布局属性。
+  function INS_applyLiveTypography(sourceNode, prefs) {
+    INS_clearLiveTypography();
+    if (!sourceNode || !prefs.typographyEnabled) return;
+
+    sourceNode.setAttribute(LIVE_TYPO_ATTR, 'true');
+    let style = document.getElementById(LIVE_TYPO_STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = LIVE_TYPO_STYLE_ID;
+      document.documentElement.appendChild(style);
+    }
+    const fontFamilyMap = {
+      default: 'system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
+      serif: '"Songti SC", "SimSun", "Noto Serif SC", serif',
+      'sans-serif': 'system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
+      monospace: 'ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    };
+    const fontFamily = fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
+    const textNodes = `[${LIVE_TYPO_ATTR}], [${LIVE_TYPO_ATTR}] p, [${LIVE_TYPO_ATTR}] h1, [${LIVE_TYPO_ATTR}] h2, [${LIVE_TYPO_ATTR}] h3, [${LIVE_TYPO_ATTR}] h4, [${LIVE_TYPO_ATTR}] h5, [${LIVE_TYPO_ATTR}] h6, [${LIVE_TYPO_ATTR}] li, [${LIVE_TYPO_ATTR}] blockquote, [${LIVE_TYPO_ATTR}] figcaption, [${LIVE_TYPO_ATTR}] td, [${LIVE_TYPO_ATTR}] th`;
+    style.textContent = `
+      [${LIVE_TYPO_ATTR}] {
+        background-color: ${prefs.customColors.bg} !important;
+        color: ${prefs.customColors.text} !important;
+        font-family: ${fontFamily} !important;
+      }
+      ${textNodes} {
+        color: ${prefs.customColors.text} !important;
+        font-family: ${fontFamily} !important;
+        font-size: ${prefs.fontSize}px !important;
+        line-height: ${prefs.lineHeight} !important;
+        letter-spacing: ${prefs.letterSpacing}em !important;
+      }
+      [${LIVE_TYPO_ATTR}] p { margin-bottom: ${prefs.paragraphSpacing}em !important; }
+    `;
+  }
+
   function INS_teardownOverlay() {
     state.renderedArticle = null;
     if (state.readerHost) {
@@ -146,6 +194,7 @@ window.INS_Reader = window.INS_Reader || {};
     state.livePageMode = true;
     INS_teardownOverlay();
     INS_setHiddenCount(noiseFilter.applyLiveHide(sourceNode));
+    INS_applyLiveTypography(sourceNode, prefs);
     INS_syncAutoplay(prefs);
     state.articleText = sourceNode.textContent || '';
     // 落点留在真实正文，aiEnhance 会走原页面分支而不是 Shadow。
@@ -174,6 +223,7 @@ window.INS_Reader = window.INS_Reader || {};
     }
 
     noiseFilter.clearLiveHide();
+    INS_clearLiveTypography();
     state.livePageMode = false;
 
     const host = INS_ensureReaderHost();
@@ -302,6 +352,7 @@ window.INS_Reader = window.INS_Reader || {};
 
   function INS_remove() {
     window.INS_Reader.noiseFilter.clearLiveHide();
+    INS_clearLiveTypography();
     INS_restoreAutoplayMedia();
     INS_setHiddenCount(0);
     state.renderedArticle = null;
