@@ -43,7 +43,9 @@ window.INS_Reader = window.INS_Reader || {};
     simplifyCache: new Map(),
     keySpans: [],
     simplifyActive: false,
+    simplifyPromise: null,
     keyInfoActive: false,
+    keyInfoPromise: null,
     // 已改写的段落及其原始子节点，clearSimplify() 靠它还原。
     appliedSimplify: [],
     styleEl: null,
@@ -131,7 +133,14 @@ window.INS_Reader = window.INS_Reader || {};
     state.appliedSimplify = [];
   }
 
-  async function INS_runSimplify() {
+  function INS_runSimplify() {
+    // 快速重复点击时复用同一个请求，避免多个调用同时读取/改写同一批段落。
+    if (state.simplifyPromise) return state.simplifyPromise;
+    if (state.simplifyActive) {
+      return Promise.resolve({ applied: state.appliedSimplify.length, keyInfoCleared: false });
+    }
+
+    const task = (async () => {
     const { aiClient } = window.INS_Reader;
     const { root } = INS_getContext();
     if (!root) throw new Error('未找到正文内容');
@@ -157,9 +166,32 @@ window.INS_Reader = window.INS_Reader || {};
     // 改写后原文措辞已不存在，之前提取的重点片段可能整体失去落点（Range 会静默塌缩
     // 成空，表现为"高亮开着但看不见"）。交给 resync 判断：还能定位就重建，全都定位
     // 不到就关掉高亮并上报，由调用方同步开关状态和提示用户。
-    const keyInfoCleared = INS_resyncKeyInfo(root);
+    let keyInfoCleared = false;
+    if (state.keyInfoActive) {
+      // 简化会替换原文文本节点，旧重点片段通常已无法定位；基于新文本重提取。
+      try {
+        state.keySpans = await aiClient.extractKeySpans(INS_normalize(root.textContent));
+        if (INS_applyKeyInfoFromCache(root) === 0) {
+          INS_clearKeyInfo();
+          state.keySpans = [];
+          keyInfoCleared = true;
+        }
+      } catch (err) {
+        INS_clearKeyInfo();
+        state.keySpans = [];
+        keyInfoCleared = true;
+      }
+    } else {
+      keyInfoCleared = INS_resyncKeyInfo(root);
+    }
     INS_notify();
     return { applied, keyInfoCleared };
+    })();
+    const promise = task.finally(() => {
+      if (state.simplifyPromise === promise) state.simplifyPromise = null;
+    });
+    state.simplifyPromise = promise;
+    return promise;
   }
 
   function INS_clearSimplify() {
@@ -282,7 +314,13 @@ window.INS_Reader = window.INS_Reader || {};
     return true;
   }
 
-  async function INS_runKeyInfo() {
+  function INS_runKeyInfo() {
+    if (state.keyInfoPromise) return state.keyInfoPromise;
+    if (state.keyInfoActive) {
+      return Promise.resolve(INS_applyKeyInfoFromCache(INS_getContext().root));
+    }
+
+    const task = (async () => {
     if (!INS_supportsHighlightApi()) {
       throw new Error('当前浏览器版本不支持高亮，请升级 Chrome');
     }
@@ -304,6 +342,12 @@ window.INS_Reader = window.INS_Reader || {};
     state.keyInfoActive = true;
     INS_notify();
     return applied;
+    })();
+    const promise = task.finally(() => {
+      if (state.keyInfoPromise === promise) state.keyInfoPromise = null;
+    });
+    state.keyInfoPromise = promise;
+    return promise;
   }
 
   function INS_clearKeyInfo() {

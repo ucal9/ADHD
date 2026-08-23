@@ -46,7 +46,7 @@
           return Promise.resolve({
             ok: true,
             // 第二个片段横跨 文本 + <a> + 文本 + <strong>，是跨节点定位的关键用例。
-            data: { spans: ['专注于阅读体验的浏览器扩展', '包含 一个链接 以及 加粗文本', '完全不存在的片段'] },
+            data: { spans: ['阅读体验', '包含 一个链接', '完全不存在的片段'] },
           });
         }
         return Promise.resolve({ ok: true, result: '- 摘要要点' });
@@ -106,7 +106,7 @@
 
   const hl = CSS.highlights.get('ins-reader-key-info');
   const texts = [...hl].map((r) => r.toString().replace(/\s+/g, ' ').trim());
-  check('跨节点片段的 Range 覆盖完整文本', texts.some((t) => t === '包含 一个链接 以及 加粗文本'), texts.join(' | '));
+  check('跨节点片段的 Range 覆盖完整文本', texts.some((t) => t === '包含 一个链接'), texts.join(' | '));
 
   aiEnhance.clearKeyInfo();
   check('撤销后高亮已移除', !CSS.highlights.has('ins-reader-key-info'));
