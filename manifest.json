@@ -32,6 +32,7 @@
         "src/modules/feasibility.js",
         "src/modules/page-meta.js",
         "src/modules/noise-filter.js",
+        "src/modules/live-noise-filter.js",
         "src/modules/dom-path.js",
         "src/modules/reading-stats.js",
         "src/modules/ai-client.js",

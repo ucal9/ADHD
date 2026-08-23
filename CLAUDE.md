@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 这是什么
 
-INS_Reader —— 一个 Chrome MV3 插件，在任意网页上叠加一层无干扰阅读层。它定位正文，在页面的*克隆体*上剥离干扰元素（广告/侧边栏/评论/弹窗），再把结果渲染进一个隔离的 Shadow DOM 浮层。原始页面 DOM 从不被修改，因此退出阅读模式是瞬时且安全的。
+INS_Reader —— 一个 Chrome MV3 插件，在任意网页上叠加一层无干扰阅读层。它定位正文，在页面的*克隆体*上剥离干扰元素（广告/侧边栏/评论/弹窗），再把结果渲染进一个隔离的 Shadow DOM 浮层。这条正文提取/排版/AI 缓读链路从不修改原始页面 DOM，因此退出阅读模式是瞬时且安全的。
+
+**降噪功能本身与上述缓读模式解耦、独立生效**：降噪（隐藏侧边栏/评论区/弹窗横幅/视频等）会直接、可逆地作用在用户正在浏览的真实页面上，不要求进入缓读模式——由专门的 `modules/live-noise-filter.js` 负责，详见下文"架构"一节。
 
 没有构建步骤，没有 package.json，没有打包工具——这是纯原生 JS，由 manifest 的 `content_scripts` 数组直接加载。没有配置测试套件或 linter。
 
@@ -23,6 +25,7 @@ vendor/readability.js       → 全局 Readability（Mozilla 的库，vendored�
 modules/prefs-store.js      → INS_Reader.prefsStore     （无依赖——最底层）
 modules/article-locator.js  → INS_Reader.articleLocator （依赖全局 Readability）
 modules/noise-filter.js     → INS_Reader.noiseFilter    （依赖 prefsStore）
+modules/live-noise-filter.js → INS_Reader.liveNoiseFilter（依赖 prefsStore/noiseFilter.NOISE_GROUPS；作用于真实页面）
 modules/dom-path.js         → INS_Reader.domPath         （纯函数工具，无依赖）
 modules/reader-layer.js     → INS_Reader.readerLayer    （依赖 prefsStore/articleLocator/noiseFilter/domPath）
 modules/panel-ui.js         → INS_Reader.panelUI        （依赖 prefsStore/noiseFilter/readerLayer/appController）
@@ -40,7 +43,14 @@ content.js                  → INS_Reader.appController  （顶层编排器，�
 4. `noiseFilter.stripNoiseFromClone()` 按当前启用的降噪选择器分组移除元素——只作用于克隆体，绝不触碰真实页面。
 5. 清理后的正文子树被挂载进一个 Shadow DOM 浮层（`:host { all: initial; }` 实现完整样式隔离），主题/字号/宽度设置以内联 `<style>` 应用。
 
-**为什么是"克隆后重新定位"而不是"就地隐藏"：** 直接在真实页面上隐藏兄弟元素（例如给广告加 `display:none`）有可能打乱原网页的 grid/flex 布局。克隆方式则完全不触碰真实 DOM——详见 README 的"设计取舍"一节。
+**为什么缓读模式的正文提取是"克隆后重新定位"而不是"就地隐藏"：** 直接在真实页面上隐藏兄弟元素（例如给广告加 `display:none`）有可能打乱原网页的 grid/flex 布局。克隆方式则完全不触碰真实 DOM——详见 README 的"设计取舍"一节。
+
+**降噪的另一条独立链路：`modules/live-noise-filter.js` 直接作用于真实页面**（见其 `sync()`）：
+1. 复用 `noiseFilter.NOISE_GROUPS` 作为唯一的选择器数据源，避免真实页面链路和克隆链路各抄一份选择器、以后改一边忘了改另一边。
+2. 用 CSS class（`ins-reader-live-hidden`，配合注入到 `document.head` 的一条 `display:none!important` 规则）而不是 `el.remove()` 隐藏元素——真实页面的隐藏必须能随时可靠地复原，节点删除做不到这一点，只有一次性、用完即弃的克隆体才适合直接删除节点。
+3. 用 `MutationObserver` 持续监听真实页面的 DOM 变化并重新 `sync()`——广告/弹窗大量是延迟注入的，只在切换开关那一刻扫一次会漏掉后续动态插入的干扰内容，这是它与克隆渲染（一次性、静态）的本质区别。
+4. "视频（暂停播放并隐藏）"类别的自动播放暂停/恢复也在这里（`INS_pauseAutoplayMedia`/`INS_restoreAutoplayMedia`），因为暂停真实播放器本身就是在改动真实页面状态。
+5. `sync()` 由 `content.js` 的 `INS_applyAll()` 和初始化流程无条件调用（不依赖 `prefs.enabled`）——这正是它与 `stripNoiseFromClone()` 最大的不同：后者只在渲染缓读浮层时才会被调用。
 
 **状态/设置**：`prefsStore` 是用户偏好的唯一数据源，通过 `chrome.storage.sync` 持久化（`STORAGE_KEY = 'ins_reader_prefs_v1'`），使设置能跨设备同步。所有模块都通过 `prefsStore.get()`（同步、内存中）读取当前偏好，而不是把偏好当参数传递。任何对偏好的写入之后，必须调用 `prefsStore.save()`，并重新触发 `appController.applyAll()`（重新渲染阅读层）和/或 `panelUI.render()`（重新渲染设置面板）——这些不是自动响应式的。
 
@@ -66,11 +76,13 @@ popup.js  ──chrome.tabs.sendMessage(INS_READER_TOGGLE_PANEL)──▶  conte
                           ▼                                          ▼
                  appController.applyAll()                  panelUI.toggle()/render()
                           │                                          │
-              ┌───────────┼───────────┐                    用户操作面板控件触发：
-              ▼           ▼           ▼                    - 改设置 → prefsStore.save()
-      readerLayer.render() ...   prefsStore.save()                 + appController.applyAll()
-              │                                             - 点"生成摘要" → aiClient.summarize()
-              │ render() 内部依次调用：                              + readerLayer.setSummary()
+              liveNoiseFilter.sync()（无条件执行，          用户操作面板控件触发：
+              不依赖 prefs.enabled，见下方独立说明）         - 改设置 → prefsStore.save()
+              ┌───────────┼───────────┐                          + appController.applyAll()
+              ▼           ▼           ▼                    - 点"生成摘要" → aiClient.summarize()
+      readerLayer.render() ...   prefsStore.save()                 + readerLayer.setSummary()
+              │
+              │ render() 内部依次调用：
               ├─ articleLocator.findArticleRoot()（只调一次，结果缓存）
               ├─ domPath.getChildIndexPath()      （克隆前记录正文位置）
               ├─ document.body.cloneNode(true)    （克隆整个 body）
@@ -78,6 +90,8 @@ popup.js  ──chrome.tabs.sendMessage(INS_READER_TOGGLE_PANEL)──▶  conte
               ├─ domPath.resolveChildIndexPath()  （克隆体里找回正文节点）
               └─ readingStats.estimateMinutes()/computeProgress()（渲染阅读时长/滚动进度）
 ```
+
+**`liveNoiseFilter.sync()` 是独立于上面这条星形结构的另一条路径**：`content.js` 在 `INS_applyAll()` 开头和初始化时（`prefsStore.load().then(...)`）都会无条件调用它，不管 `prefs.enabled` 是否为 true——它直接读写真实 `document`，不产出任何供 `readerLayer`/`panelUI` 消费的返回值，纯粹是把真实页面的隐藏状态与当前 `prefs.noiseReduction`/`noiseOptions` 对齐。
 
 **AI 摘要请求的跨进程/跨服务调用链**（唯一穿过 content script 边界的链路）：
 
@@ -109,5 +123,5 @@ backend/services/llm_client.py
 
 - 全篇使用中文注释和 UI 文案——编辑时保持一致。
 - 每个模块文件开头都有一段注释说明其职责和依赖关系（或声明无依赖）——新增模块时延续这个模式。
-- 绝不能在 `noiseFilter` 或 `articleLocator` 中修改真实页面 DOM——只能操作克隆体或进行只读查询。这是架构的硬性不变量，不是风格偏好。
+- 绝不能在 `noiseFilter` 或 `articleLocator` 中修改真实页面 DOM——只能操作克隆体或进行只读查询。这是架构的硬性不变量，不是风格偏好。**唯一的例外是 `live-noise-filter.js`**：它被明确授权以可逆方式（CSS class 开关 + 暂停/恢复媒体播放状态，绝不删除节点、绝不做结构性改动）操作真实页面，专门服务于"降噪独立于缓读模式生效"这个需求——新增任何会碰真实 DOM 的逻辑，都应该走这个模块，而不是就地在别处新开一个例外。
 - 本仓库代码版权归 Insta360 所有（专有，非开源）。每个自研源文件（`src/`、`backend/`，不含 `vendor/`）开头第一行必须是 `Copyright (c) <年份> Insta360. All rights reserved.`——新增文件时延续这个模式。`vendor/readability.js` 保留其原始 Apache-2.0 版权头，不要改动。

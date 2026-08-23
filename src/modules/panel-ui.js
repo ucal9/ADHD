@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Insta360. All rights reserved.
 // INS_Reader · 设置面板模块
 // 职责：渲染用户设置面板，Shadow DOM 隔离样式。面板分两级：
-// 一级入口界面只展示 Logo/Slogan、一键降噪（阅读模式总开关，关闭即恢复原网页）与
+// 一级入口界面只展示 Logo/Slogan、一键降噪（与阅读模式解耦的独立开关，直接作用于真实页面）与
 // 【我的预设】入口（沿用原"详细配置"按钮的展开逻辑，AI 内容助手总开关也一并挪入其中）；
 // 点【我的预设】后展开二级面板（主题、排版、预设管理、动态降噪细分开关、AI 二级细分开关）。
 // 依赖 INS_Reader.prefsStore / readerLayer / aiClient / pageMeta / appController。
@@ -309,9 +309,8 @@ window.INS_Reader = window.INS_Reader || {};
           </div>`
             )
             .join('')}
-          <p class="noise-reset-hint">关闭此开关会直接退出阅读视图并显示原网页；排版与 AI 设置不受影响，重新开启后自动恢复。</p>
+          <p class="noise-reset-hint">降噪直接作用于当前网页本身，与是否开启阅读模式无关；关闭对应开关即可立即恢复，无需刷新页面。</p>
           <p class="noise-risk-disclaimer">"视频（暂停播放并隐藏）"可能影响页面正常播放或功能，请谨慎开启</p>
-          <p class="noise-reset-hint">降噪只作用于阅读层的克隆内容，关闭对应开关即可立即恢复，无需刷新页面。</p>
           <p class="noise-feedback">本页已隐藏 <b data-role="noise-count">${readerLayer.getHiddenCount()}</b> 个干扰元素</p>
         </div>`
             : ''
@@ -410,7 +409,7 @@ window.INS_Reader = window.INS_Reader || {};
           <div class="simple-header">
             <span class="brand-icon" aria-hidden="true"><span></span><span></span><span></span></span>
             <span class="simple-title">缓读</span>
-            <button class="switch ${prefs.enabled ? 'on' : ''}" data-role="simple-noise-toggle" aria-label="一键降噪"><span></span></button>
+            <button class="switch ${prefs.noiseReduction ? 'on' : ''}" data-role="simple-noise-toggle" aria-label="一键降噪"><span></span></button>
           </div>
           <p class="tagline">把阅读调成适合你的样子</p>
 
@@ -618,8 +617,9 @@ window.INS_Reader = window.INS_Reader || {};
     if (noiseMasterSwitch) {
       noiseMasterSwitch.addEventListener('click', (e) => {
         e.stopPropagation();
+        // 降噪与缓读模式解耦：这里不再强制 prefs.enabled = true——降噪应该直接
+        // 作用于真实页面，不需要连带进入缓读模式。
         prefs.noiseReduction = !prefs.noiseReduction;
-        prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
         INS_render();
@@ -833,30 +833,23 @@ window.INS_Reader = window.INS_Reader || {};
       });
     });
 
-    // 一键降噪开关：本身就是阅读模式的总开关，关闭即直接恢复原网页，
-    // 不是仅仅停用降噪子功能——用户预期"关掉这个开关=退出阅读模式"，
-    // 与详细配置里"恢复原网页"按钮和弹出页"一键降噪"开关的效果保持一致。
+    // 一键降噪开关：与缓读模式解耦，只切换 prefs.noiseReduction，直接作用于
+    // 真实页面（不需要进入/退出缓读模式）。退出缓读模式请用"恢复原网页"按钮。
     const simpleNoiseToggle = panel.querySelector('[data-role="simple-noise-toggle"]');
     if (simpleNoiseToggle) {
       simpleNoiseToggle.addEventListener('click', () => {
-        if (prefs.enabled) {
-          appController.restoreOriginalPage();
-          return;
-        }
-        prefs.enabled = true;
-        prefs.noiseReduction = true;
+        prefs.noiseReduction = !prefs.noiseReduction;
         prefsStore.save();
         appController.applyAll();
         INS_render();
       });
     }
 
-    // 各降噪选项开关
+    // 各降噪选项开关：同样不强制进入缓读模式，直接作用于真实页面。
     panel.querySelectorAll('[data-noise-key]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const key = btn.getAttribute('data-noise-key');
         prefs.noiseOptions[key] = !prefs.noiseOptions[key];
-        prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
         INS_render();

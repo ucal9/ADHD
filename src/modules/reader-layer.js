@@ -27,7 +27,6 @@ window.INS_Reader = window.INS_Reader || {};
     contentVersion: 'original', // 内容版本：'original' 原文 | 'digest' 缓读版（展示已生成的摘要/高亮），由面板模块的"内容版本"切换控制
     articleText: '', // 当前渲染的正文纯文本，供面板模块传给 aiClient.summarize()/aiClient.highlight()
     lastFeasibilityReason: null, // 最近一次 render() 判定不可行的原因，null 表示可行或未判断过
-    pausedMedia: [], // 因"暂停自动播放"被我们暂停的原页面媒体元素，退出阅读模式时还原 autoplay
   };
 
   function INS_ensureReaderHost() {
@@ -42,28 +41,6 @@ window.INS_Reader = window.INS_Reader || {};
     state.readerHost.style.zIndex = '2147483646'; // 面板层 z-index 减 1，面板始终盖在阅读层之上
     document.documentElement.appendChild(state.readerHost);
     return state.readerHost;
-  }
-
-  // 暂停原页面里正在自动播放的视频/音频。这是全模块唯一会改动原页面运行状态的地方
-  // （不改 DOM 结构，只改播放状态 + 暂存 autoplay 属性），因为"自动播放"是播放器行为，
-  // 在克隆体上做任何处理都影响不到真实页面里那个正在出声的播放器。
-  // 所有改动都记在 state.pausedMedia 里，退出阅读模式时由 INS_restoreAutoplay() 原样还原。
-  function INS_pauseAutoplayMedia() {
-    document.querySelectorAll('video, audio').forEach((el) => {
-      const hadAutoplay = el.hasAttribute('autoplay');
-      if (!hadAutoplay && el.paused) return;
-      state.pausedMedia.push({ el, hadAutoplay, wasPlaying: !el.paused });
-      if (hadAutoplay) el.removeAttribute('autoplay');
-      if (!el.paused) el.pause();
-    });
-  }
-
-  function INS_restoreAutoplayMedia() {
-    state.pausedMedia.forEach(({ el, hadAutoplay, wasPlaying }) => {
-      if (hadAutoplay) el.setAttribute('autoplay', '');
-      if (wasPlaying) el.play().catch(() => {});
-    });
-    state.pausedMedia = [];
   }
 
   function INS_lockOriginalPage() {
@@ -133,13 +110,6 @@ window.INS_Reader = window.INS_Reader || {};
     // 阅读层里，不应该计入"已隐藏 N 个干扰元素"，否则这个数字会和用户实际看到的效果对不上。
     state.hiddenCount = noiseFilter.stripNoiseFromClone(bodyClone, resolvedClone);
 
-    // 自动播放的暂停必须作用于原页面（克隆体里的播放器不会发声），因此单独处理；
-    // 与"视频（暂停播放并隐藏）"是同一个开关的两个动作，一起生效一起还原。
-    if (prefs.noiseReduction && prefs.noiseOptions.video) {
-      INS_pauseAutoplayMedia();
-    } else {
-      INS_restoreAutoplayMedia();
-    }
     if (typeof state.onHiddenCountChange === 'function') {
       state.onHiddenCountChange(state.hiddenCount);
     }
@@ -376,7 +346,6 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_remove() {
-    INS_restoreAutoplayMedia();
     if (state.readerHost) {
       state.readerHost.remove();
       state.readerHost = null;
