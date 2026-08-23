@@ -2,9 +2,10 @@
 
 缓读 · AI 内容助手路由
 POST /v1/ai/summarize：接收正文文本，按 mode 返回 LLM 结果。
-- mode=summary  → result 为纯文本要点摘要；
-- mode=simplify → data 为 {"paragraphs":[{"i":编号,"text":"改写后段落"}]}；
-- mode=keyinfo  → data 为 {"spans":["原文片段", ...]}。
+- mode=summary    → result 为纯文本要点摘要；
+- mode=simplify   → data 为 {"paragraphs":[{"i":编号,"text":"改写后段落"}]}；
+- mode=keyinfo    → data 为 {"spans":["原文片段", ...]}；
+- mode=imagenoise → data 为 {"keep":[编号, ...]}，编号对应请求里的图片。
 result 与 data 互斥：前者给纯文本模式，后者给结构化模式，
 这样 background.js 不必按 mode 分支解析，直接把整个 body 回传给 ai-client.js。
 按 device_id 限流，不落地正文内容（不写数据库、不记日志正文）。
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/v1/ai", tags=["ai"])
 class SummarizeRequest(BaseModel):
     device_id: str = Field(min_length=1, max_length=100)
     text: str = Field(min_length=1)
-    mode: Literal["summary", "simplify", "keyinfo"] = "summary"
+    mode: Literal["summary", "simplify", "keyinfo", "imagenoise"] = "summary"
 
 
 class SummarizeResponse(BaseModel):

@@ -1,0 +1,109 @@
+<!doctype html>
+<!-- 缓读 · 图片三分类本地验证页（仅开发用，不属于插件运行时）
+     验证本地规则把图分成 keep / hide / ambiguous，不依赖后端。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>图片智能屏蔽分类验证</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 16px; }
+  #fixtures { position: absolute; left: -9999px; top: 0; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f5f5f3; padding: 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <div id="fixtures">
+    <article id="article">
+      <figure id="keep-figure">
+        <img id="keep-captioned" width="800" height="450" alt="发布会现场" src="https://cdn.example.com/news/scene.jpg" />
+        <figcaption>图：发布会现场照片</figcaption>
+      </figure>
+      <p>
+        <img id="keep-large" width="640" height="360" alt="卫星云图对比" src="https://cdn.example.com/news/chart.png" />
+      </p>
+      <p>
+        <img id="ambiguous-inline" width="200" height="150" alt="图" src="https://cdn.example.com/news/maybe.jpg" />
+      </p>
+      <p>
+        <img id="hide-pixel" width="1" height="1" alt="" src="https://tracker.example.com/pixel.gif" />
+      </p>
+      <p>
+        <img id="hide-icon" width="24" height="24" alt="" src="https://cdn.example.com/icon-share.png" />
+      </p>
+      <p>
+        <img id="hide-iab" width="728" height="90" alt="热销" src="https://cdn.example.com/promo/top.jpg" />
+      </p>
+      <p>
+        <img id="hide-ad-class" width="400" height="300" class="advert-slot" alt="推广" src="https://cdn.example.com/slot.jpg" />
+      </p>
+      <p>
+        <img id="hide-ad-src" width="400" height="300" alt="商品" src="https://pagead2.googlesyndication.com/banner.jpg" />
+      </p>
+    </article>
+    <aside id="sidebar">
+      <img id="hide-sidebar" width="200" height="150" alt="相关阅读" src="https://cdn.example.com/thumb.jpg" />
+    </aside>
+  </div>
+  <div id="log"></div>
+
+<script src="../../src/modules/image-classifier.js"></script>
+<script>
+(function () {
+  const out = [];
+  const check = (name, cond, extra = '') => {
+    out.push(`${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`);
+    if (!cond) window.__failed = true;
+  };
+
+  const classifier = window.INS_Reader && window.INS_Reader.imageClassifier;
+  check('暴露 imageClassifier', !!classifier && typeof classifier.classify === 'function');
+  if (!classifier) {
+    document.getElementById('log').textContent = out.join('\n') + '\n\nFAILED';
+    window.__done = true;
+    return;
+  }
+
+  classifier.clearMemory();
+
+  const verdict = (id) => classifier.classify(document.getElementById(id));
+
+  check('带图注的正文大图 keep', verdict('keep-captioned') === 'keep', verdict('keep-captioned'));
+  check('正文大图 keep', verdict('keep-large') === 'keep', verdict('keep-large'));
+  check('无图注的中等正文图 ambiguous', verdict('ambiguous-inline') === 'ambiguous', verdict('ambiguous-inline'));
+  check('1×1 追踪像素 hide', verdict('hide-pixel') === 'hide', verdict('hide-pixel'));
+  check('小图标 hide', verdict('hide-icon') === 'hide', verdict('hide-icon'));
+  check('IAB 横幅尺寸 hide', verdict('hide-iab') === 'hide', verdict('hide-iab'));
+  check('广告 class hide', verdict('hide-ad-class') === 'hide', verdict('hide-ad-class'));
+  check('广告网络 src hide', verdict('hide-ad-src') === 'hide', verdict('hide-ad-src'));
+  check('侧栏缩略图 hide', verdict('hide-sidebar') === 'hide', verdict('hide-sidebar'));
+
+  const described = classifier.describe(document.getElementById('keep-captioned'), 0);
+  check('describe 带编号', described.i === 0);
+  check('describe 去掉查询串', described.src === 'https://cdn.example.com/news/scene.jpg');
+  check('describe 含尺寸', described.width === 800 && described.height === 450, JSON.stringify(described));
+  check('describe 含 alt', described.alt === '发布会现场');
+  check('describe 含图注', described.caption.indexOf('发布会现场照片') !== -1, described.caption);
+  check('describe 含上下文', /article|figure/i.test(described.context), described.context);
+
+  const dirty = document.createElement('img');
+  dirty.src = 'https://cdn.example.com/news/scene.jpg?token=secret&utm=1#hash';
+  dirty.setAttribute('width', '800');
+  dirty.setAttribute('height', '450');
+  dirty.alt = '发布会现场';
+  document.getElementById('article').appendChild(dirty);
+  const stripped = classifier.describe(dirty, 1);
+  check('describe 剥离 token 查询参数', stripped.src === 'https://cdn.example.com/news/scene.jpg', stripped.src);
+  dirty.remove();
+
+  classifier.remember('https://cdn.example.com/news/maybe.jpg', 'keep');
+  check('缓存 keep 覆盖 ambiguous', verdict('ambiguous-inline') === 'keep', verdict('ambiguous-inline'));
+  classifier.clearMemory();
+  check('清空缓存后回到 ambiguous', verdict('ambiguous-inline') === 'ambiguous', verdict('ambiguous-inline'));
+
+  document.getElementById('log').textContent = out.join('\n') +
+    `\n\n${window.__failed ? 'FAILED' : 'ALL PASSED'}`;
+  window.__done = true;
+})();
+</script>
+</body>
+</html>

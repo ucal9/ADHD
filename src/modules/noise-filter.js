@@ -2,7 +2,8 @@
 // INS_Reader · 降噪清理模块
 // 职责：维护降噪选择器规则组。未全开细分时对真实页面做可逆隐藏；
 // 四开关全开时对 DOM 克隆体执行清理（不触碰原页面结构）。
-// 依赖 INS_Reader.prefsStore 读取用户当前开启的降噪类别。
+// 依赖 INS_Reader.prefsStore 读取用户当前开启的降噪类别；
+// 智能屏蔽图片依赖 INS_Reader.imageClassifier（须先加载）和可选的 aiClient.classifyImages。
 // 调用者：reader-layer.js 的 render() 调用 stripNoiseFromClone() / isStrictArticleMode()；
 // panel-ui.js 读取 UI_NOISE_KEYS 来渲染降噪类别开关。
 
@@ -17,12 +18,10 @@ window.INS_Reader = window.INS_Reader || {};
     // 会员/登录墙推销 UI：常见于 CSDN、掘金等技术博客站——蒙层遮挡正文、
     // 求关注/求登录浮层、VIP 购买卡片，混在正文容器内部而非平级兄弟节点。
     marketing: ['[class*="vip-mask"]', '[class*="mask-dark"]', '[class*="article-vip"]', '[class*="openvippay"]', '[class*="unlogin"]', '[class*="login-mask"]'],
-    // 屏蔽视频、动画和图片：媒体标签与常见播放器壳一起摘掉，再向上收空壳，
-    // 避免封面图/固定高度容器留下空白。正文配图也去掉，由用户自行控制该选项。
+    // 智能屏蔽：视频/动画/播放器壳仍用选择器一刀切；图片不再进选择器，
+    // 改由 imageClassifier 逐张判定，只藏无意义图，正文配图留下。
     blockAllVideos: [
       'video',
-      'img',
-      'picture',
       'canvas',
       'iframe[src*="youtube"]',
       'iframe[src*="bilibili"]',
@@ -220,12 +219,125 @@ window.INS_Reader = window.INS_Reader || {};
     count += INS_eachExtraSiteNode(cloneRoot, prefs, protectRoot, (el) => {
       if (el.parentNode) el.remove();
     });
+    count += INS_stripSmartImagesFromClone(cloneRoot, protectRoot, prefs);
     INS_collapseEmptyInClone(cloneRoot, protectRoot);
     return count;
   }
 
   const LIVE_HIDE_ATTR = 'data-ins-noise-hide';
   const LIVE_STYLE_ID = 'ins-reader-live-noise-style';
+  const MAX_AI_IMAGES = 24;
+  let hideGeneration = 0;
+  let lastRestorePromise = Promise.resolve();
+  let imageObserver = null;
+  let imageWatchTimer = null;
+  let watchedProtectRoot = null;
+
+  function INS_isSkippableImage(el, protectRoot) {
+    if (!el) return true;
+    if (INS_isExtensionHost(el) || INS_isProtected(el, protectRoot)) return true;
+    if (el.closest('#ins-reader-host, #ins-reader-panel-host, #ins-reader-ai-card-host')) return true;
+    return false;
+  }
+
+  function INS_stripSmartImagesFromClone(cloneRoot, protectRoot, prefs) {
+    if (!prefs.noiseOptions || !prefs.noiseOptions.blockAllVideos) return 0;
+    const classifier = window.INS_Reader.imageClassifier;
+    if (!classifier || !cloneRoot.querySelectorAll) return 0;
+    let count = 0;
+    cloneRoot.querySelectorAll('img').forEach((el) => {
+      if (!el.parentNode) return;
+      if (INS_isProtected(el, protectRoot)) return;
+      if (classifier.classify(el) === 'keep') return;
+      el.remove();
+      count += 1;
+    });
+    return count;
+  }
+
+  function INS_hideSmartImages(protectRoot, mediaStarts) {
+    const classifier = window.INS_Reader.imageClassifier;
+    const prefs = window.INS_Reader.prefsStore.get();
+    const result = { hidden: 0, ambiguous: [] };
+    if (!prefs.noiseOptions || !prefs.noiseOptions.blockAllVideos || !classifier) return result;
+    document.body.querySelectorAll('img').forEach((el) => {
+      if (INS_isSkippableImage(el, protectRoot)) return;
+      if (el.closest(`[${LIVE_HIDE_ATTR}]`)) return;
+      const verdict = classifier.classify(el);
+      if (verdict === 'keep') return;
+      el.setAttribute(LIVE_HIDE_ATTR, 'blockAllVideos');
+      mediaStarts.push(el);
+      result.hidden += 1;
+      if (verdict === 'ambiguous') result.ambiguous.push(el);
+    });
+    return result;
+  }
+
+  function INS_revealNode(el) {
+    if (!el) return;
+    el.removeAttribute(LIVE_HIDE_ATTR);
+    let parent = el.parentElement;
+    while (parent && parent !== document.body && parent !== document.documentElement) {
+      if (parent.getAttribute(LIVE_HIDE_ATTR) === 'blockAllVideos' && INS_hasVisibleSubstance(parent, LIVE_HIDE_ATTR)) {
+        parent.removeAttribute(LIVE_HIDE_ATTR);
+      }
+      parent = parent.parentElement;
+    }
+  }
+
+  function INS_mediaShieldOn() {
+    const prefs = window.INS_Reader.prefsStore.get();
+    return !!(prefs.noiseReduction && prefs.noiseOptions && prefs.noiseOptions.blockAllVideos);
+  }
+
+  async function INS_requestImageRestore(images, generation) {
+    const classifier = window.INS_Reader.imageClassifier;
+    const aiClient = window.INS_Reader.aiClient;
+    if (!images.length || !classifier || !aiClient || typeof aiClient.classifyImages !== 'function') {
+      return;
+    }
+    const pending = images.slice(0, MAX_AI_IMAGES);
+    const items = pending.map((el, i) => classifier.describe(el, i));
+    try {
+      const keepIds = await aiClient.classifyImages(items);
+      pending.forEach((el, i) => {
+        const src = items[i].src;
+        if (keepIds.indexOf(i) !== -1) classifier.remember(src, 'keep');
+        else classifier.remember(src, 'hide');
+      });
+      if (generation !== hideGeneration || !INS_mediaShieldOn()) return;
+      keepIds.forEach((i) => {
+        const el = pending[i];
+        if (!el || !el.isConnected) return;
+        INS_revealNode(el);
+      });
+      const layer = window.INS_Reader.readerLayer;
+      if (layer && typeof layer.setHiddenCount === 'function') {
+        layer.setHiddenCount(document.querySelectorAll(`[${LIVE_HIDE_ATTR}]`).length);
+      }
+    } catch (error) {
+      // 失败保持隐藏：开关仍生效，只是正文配图可能不再恢复。
+    }
+  }
+
+  function INS_watchNewImages(protectRoot) {
+    watchedProtectRoot = protectRoot;
+    if (imageObserver) return;
+    imageObserver = new MutationObserver(() => {
+      if (imageWatchTimer) clearTimeout(imageWatchTimer);
+      imageWatchTimer = setTimeout(() => {
+        if (!INS_mediaShieldOn()) return;
+        const mediaStarts = [];
+        const pending = INS_hideSmartImages(watchedProtectRoot, mediaStarts);
+        if (!pending.hidden) return;
+        INS_collapseEmptyAncestors(mediaStarts, watchedProtectRoot, 'blockAllVideos');
+        if (pending.ambiguous.length) {
+          lastRestorePromise = INS_requestImageRestore(pending.ambiguous, hideGeneration);
+        }
+      }, 200);
+    });
+    imageObserver.observe(document.body, { childList: true, subtree: true });
+  }
 
   function INS_selectorTouchesProtect(selector, protectRoot) {
     if (!protectRoot) return false;
@@ -254,7 +366,22 @@ window.INS_Reader = window.INS_Reader || {};
     style.textContent = rules.join('\n');
   }
 
+  function INS_stopImageWatch() {
+    if (imageObserver) {
+      imageObserver.disconnect();
+      imageObserver = null;
+    }
+    if (imageWatchTimer) {
+      clearTimeout(imageWatchTimer);
+      imageWatchTimer = null;
+    }
+  }
+
   function INS_clearLiveHide() {
+    hideGeneration += 1;
+    lastRestorePromise = Promise.resolve();
+    INS_stopImageWatch();
+    if (window.INS_Reader.imageClassifier) window.INS_Reader.imageClassifier.clearMemory();
     document.querySelectorAll(`[${LIVE_HIDE_ATTR}]`).forEach((el) => {
       el.removeAttribute(LIVE_HIDE_ATTR);
     });
@@ -266,13 +393,17 @@ window.INS_Reader = window.INS_Reader || {};
   // 这样侧栏/评论关掉隐藏后仍留在原来的 grid/flex 位置。
   // 选择器会同时写入 stylesheet：新浪底部图示墙是异步插入的，只打属性会漏掉晚到的节点。
   function INS_applyLiveHide(protectRoot) {
+    hideGeneration += 1;
+    const generation = hideGeneration;
     document.querySelectorAll(`[${LIVE_HIDE_ATTR}]`).forEach((el) => {
       el.removeAttribute(LIVE_HIDE_ATTR);
     });
     const prefs = window.INS_Reader.prefsStore.get();
     if (!prefs.noiseReduction) {
+      INS_stopImageWatch();
       const style = document.getElementById(LIVE_STYLE_ID);
       if (style) style.remove();
+      lastRestorePromise = Promise.resolve();
       return 0;
     }
     const cssSelectors = [];
@@ -300,6 +431,8 @@ window.INS_Reader = window.INS_Reader || {};
         count += 1;
       });
     }
+    const pendingImages = INS_hideSmartImages(protectRoot, mediaStarts);
+    count += pendingImages.hidden;
     INS_collapseEmptyAncestors(mediaStarts, protectRoot, 'blockAllVideos');
     count += INS_eachExtraSiteNode(document.body, prefs, protectRoot, (el, category) => {
       if (INS_isExtensionHost(el)) return;
@@ -307,6 +440,13 @@ window.INS_Reader = window.INS_Reader || {};
       el.setAttribute(LIVE_HIDE_ATTR, category);
     });
     INS_setLiveHideCss(cssSelectors);
+    if (prefs.noiseOptions && prefs.noiseOptions.blockAllVideos) {
+      INS_watchNewImages(protectRoot);
+      lastRestorePromise = INS_requestImageRestore(pendingImages.ambiguous, generation);
+    } else {
+      INS_stopImageWatch();
+      lastRestorePromise = Promise.resolve();
+    }
     return count;
   }
 
@@ -318,5 +458,6 @@ window.INS_Reader = window.INS_Reader || {};
     stripNoiseFromClone: INS_stripNoiseFromClone,
     applyLiveHide: INS_applyLiveHide,
     clearLiveHide: INS_clearLiveHide,
+    whenImagesClassified: () => lastRestorePromise,
   };
 })();

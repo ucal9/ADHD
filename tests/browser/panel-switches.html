@@ -43,6 +43,7 @@
 <script src="../../src/modules/article-locator.js"></script>
 <script src="../../src/modules/feasibility.js"></script>
 <script src="../../src/modules/page-meta.js"></script>
+<script src="../../src/modules/image-classifier.js"></script>
 <script src="../../src/modules/noise-filter.js"></script>
 <script src="../../src/modules/dom-path.js"></script>
 <script src="../../src/modules/reading-stats.js"></script>
@@ -94,6 +95,8 @@
   shadow().querySelector('[data-role="typography-toggle"]').click();
   shadow().querySelector('[data-role="ai-toggle"]').click();
   shadow().querySelector('[data-role="noise-toggle"]').click();
+  const mediaLabel = shadow().querySelector('[data-noise-key="blockAllVideos"]')?.previousElementSibling?.textContent || '';
+  check('媒体开关文案是智能屏蔽', mediaLabel.includes('智能屏蔽'), mediaLabel);
 
   const panelBefore = shadow().querySelector('.ins-reader-panel');
   check(

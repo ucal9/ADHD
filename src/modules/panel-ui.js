@@ -417,7 +417,7 @@ window.INS_Reader = window.INS_Reader || {};
       sidebar: '隐藏侧边栏',
       comments: '隐藏评论区',
       banners: '隐藏弹窗横幅',
-      blockAllVideos: '屏蔽视频、动画和图片',
+      blockAllVideos: '智能屏蔽广告图、视频和动画',
     };
 
     // 降噪开关的展示顺序与 noise-filter 的 UI_NOISE_KEYS 保持一致。

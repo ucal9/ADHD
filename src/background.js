@@ -84,6 +84,7 @@ const CONTENT_SCRIPT_FILES = [
   'src/modules/article-locator.js',
   'src/modules/feasibility.js',
   'src/modules/page-meta.js',
+  'src/modules/image-classifier.js',
   'src/modules/noise-filter.js',
   'src/modules/dom-path.js',
   'src/modules/reading-stats.js',

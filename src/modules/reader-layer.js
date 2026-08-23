@@ -555,6 +555,7 @@ window.INS_Reader = window.INS_Reader || {};
     lockOriginalPage: INS_lockOriginalPage,
     unlockOriginalPage: INS_unlockOriginalPage,
     getHiddenCount: INS_getHiddenCount,
+    setHiddenCount: INS_setHiddenCount,
     setOnHiddenCountChange: INS_setOnHiddenCountChange,
     getArticleText: INS_getArticleText,
     getRenderedArticle: INS_getRenderedArticle,

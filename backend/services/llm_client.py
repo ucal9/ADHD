@@ -4,11 +4,12 @@
 职责：封装对 Anthropic Messages API（或兼容网关）的调用，密钥从环境变量读取，从不暴露给前端。
 调用者：仅 routers/ai.py 的 summarize_endpoint()，限流通过后调用本模块的 generate()。
 
-支持三种任务模式（mode），共用同一次 Messages API 调用路径，只有 system prompt 与
+支持四种任务模式（mode），共用同一次 Messages API 调用路径，只有 system prompt 与
 输出校验不同：
-- summary  → 纯文本要点摘要，直接展示；
-- simplify → 段落改写，返回 {"paragraphs":[{"i":编号,"text":"..."}]} 的 JSON 文本；
-- keyinfo  → 核心片段抽取，返回 {"spans":["原文片段", ...]} 的 JSON 文本。
+- summary    → 纯文本要点摘要，直接展示；
+- simplify   → 段落改写，返回 {"paragraphs":[{"i":编号,"text":"..."}]} 的 JSON 文本；
+- keyinfo    → 核心片段抽取，返回 {"spans":["原文片段", ...]} 的 JSON 文本；
+- imagenoise → 图片去留，返回 {"keep":[编号, ...]} 的 JSON 文本。
 结构化模式在服务端就做 JSON 解析与形状校验，模型输出跑偏时直接回 502，
 避免把不可解析的内容丢给前端，让前端只需处理"成功/失败"两种情况。
 
@@ -68,14 +69,25 @@ KEYINFO_SYSTEM_PROMPT = (
     "不要输出 JSON 以外的任何内容，不要用代码块包裹。"
 )
 
+IMAGENOISE_SYSTEM_PROMPT = (
+    "你是一个帮助注意力容易分散的读者过滤网页噪音图片的助手。"
+    "用户会给你一组带编号的图片元数据（地址、尺寸、alt、图注、所在 DOM 上下文），不会给你图片像素。"
+    "请判断哪些图片是帮助理解正文的配图、图表或信息图，应保留。"
+    "广告、相关推荐缩略图、装饰图标、追踪像素、推销横幅应隐藏，不要放入 keep。"
+    '只输出 JSON，格式为 {"keep":[编号, ...]}，编号必须来自输入。'
+    '若没有应保留的图片，输出 {"keep":[]}。'
+    "不要输出 JSON 以外的任何内容，不要用代码块包裹。"
+)
+
 SYSTEM_PROMPTS = {
     "summary": SUMMARY_SYSTEM_PROMPT,
     "simplify": SIMPLIFY_SYSTEM_PROMPT,
     "keyinfo": KEYINFO_SYSTEM_PROMPT,
+    "imagenoise": IMAGENOISE_SYSTEM_PROMPT,
 }
 
 # 结构化模式要输出整篇改写，512 tokens 会被截断成不合法 JSON。
-MAX_TOKENS = {"summary": 512, "simplify": 4096, "keyinfo": 1024}
+MAX_TOKENS = {"summary": 512, "simplify": 4096, "keyinfo": 1024, "imagenoise": 512}
 
 SUPPORTED_MODES = tuple(SYSTEM_PROMPTS)
 
@@ -202,7 +214,7 @@ def _loads_lenient(mode: str, raw: str) -> object:
 def _parse_structured(mode: str, raw: str) -> dict:
     """把结构化模式的模型输出解析成固定形状的 dict，形状不符即视为上游错误。
 
-    前端拿到的永远是 {"paragraphs": [...]} 或 {"spans": [...]}，
+    前端拿到的永远是 {"paragraphs": [...]}、{"spans": [...]} 或 {"keep": [...]}，
     单个不合法的条目在这里被丢弃而不是让整次请求失败——模型偶尔多吐一条空串
     不该让用户看到"生成失败"。
     """
@@ -236,6 +248,22 @@ def _parse_structured(mode: str, raw: str) -> dict:
             raise LLMError("AI 未返回可用的改写结果", status_code=502)
         return {"paragraphs": cleaned}
 
+    if mode == "imagenoise":
+        items = data.get("keep")
+        if not isinstance(items, list):
+            raise LLMError("AI 返回格式异常，请重试", status_code=502)
+        cleaned_keep: list[int] = []
+        seen: set[int] = set()
+        for item in items:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                continue
+            index = int(item)
+            if index in seen:
+                continue
+            seen.add(index)
+            cleaned_keep.append(index)
+        return {"keep": cleaned_keep}
+
     items = data.get("spans")
     if not isinstance(items, list):
         raise LLMError("AI 返回格式异常，请重试", status_code=502)
@@ -246,7 +274,7 @@ def _parse_structured(mode: str, raw: str) -> dict:
 
 
 async def generate(text: str, mode: str = "summary") -> str | dict:
-    """按 mode 调用 LLM。summary 返回纯文本，simplify/keyinfo 返回已校验的 dict。"""
+    """按 mode 调用 LLM。summary 返回纯文本，simplify/keyinfo/imagenoise 返回已校验的 dict。"""
     if mode not in SYSTEM_PROMPTS:
         raise LLMError(f"不支持的 mode：{mode}", status_code=400)
 

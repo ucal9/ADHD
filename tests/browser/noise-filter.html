@@ -45,6 +45,12 @@
       <p id="after-video">这段文字应在视频壳隐藏后上移，不能再空出封面图的位置。</p>
       <p id="photo-wrap"><img id="inline-photo" alt="配图" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /></p>
       <p id="after-photo">配图后的段落应随配图消失而补上。</p>
+      <figure id="article-figure">
+        <img id="article-photo" width="800" height="450" alt="发布会现场" src="https://cdn.example.com/news/scene.jpg" />
+        <figcaption>图：发布会现场照片</figcaption>
+      </figure>
+      <p id="ad-wrap"><img id="ad-banner" class="advert-slot" width="728" height="90" alt="广告" src="https://cdn.example.com/ad.jpg" /></p>
+      <p id="maybe-wrap"><img id="maybe-photo" width="200" height="150" alt="图" src="https://cdn.example.com/news/maybe.jpg" /></p>
       <p id="disclaimer">特别声明：以上文章内容仅代表作者本人观点，不代表新浪网观点或立场。如有关于作品内容、版权或其它问题请于作品发表后的30日内与新浪网联系。</p>
     </article>
     <aside class="article-content-right sidebar" id="page-sidebar">右侧推荐</aside>
@@ -64,6 +70,7 @@
 <script src="../../src/modules/sina-adapter.js"></script>
 <script src="../../src/modules/article-locator.js"></script>
 <script src="../../src/modules/feasibility.js"></script>
+<script src="../../src/modules/image-classifier.js"></script>
 <script src="../../src/modules/noise-filter.js"></script>
 <script src="../../src/modules/dom-path.js"></script>
 <script src="../../src/modules/reading-stats.js"></script>
@@ -186,9 +193,12 @@
 
   applyNoise({ sidebar: false, comments: false, banners: false, videos: true });
   check('只开媒体后正文 video 被隐藏', isLiveHidden('article-video'));
-  check('只开媒体后封面图被隐藏', isLiveHidden('poster'));
+  check('只开媒体后封面图被隐藏', isLiveHidden('poster') || isLiveHidden('video-shell'));
   check('只开媒体后视频壳被收起', isLiveHidden('video-shell'));
   check('只开媒体后配图被隐藏', isLiveHidden('inline-photo'));
+  check('只开媒体后正文配图仍在', isLiveShown('article-photo'));
+  check('只开媒体后广告横幅被隐藏', isLiveHidden('ad-banner'));
+  check('只开媒体后拿不准的图先隐藏', isLiveHidden('maybe-photo'));
   check('只开媒体后右栏视频卡片被隐藏', isLiveHidden('side-video'));
   check('只开媒体后底部图示被隐藏', isLiveHidden('article-bottom'));
   check('只开媒体后标题仍在', isLiveShown('article-title'));
@@ -203,6 +213,17 @@
   check('只开横幅时底部图示不被视频规则误伤', isLiveShown('article-bottom'));
   check('只开横幅后标题仍在', isLiveShown('article-title'));
   check('只开横幅后日期来源仍在', isLiveShown('article-meta'));
+  check('只开横幅时正文配图仍在', isLiveShown('article-photo'));
+
+  window.INS_Reader.aiClient.classifyImages = async (items) =>
+    items.filter((item) => String(item.src).includes('maybe.jpg')).map((item) => item.i);
+  applyNoise({ sidebar: false, comments: false, banners: false, videos: true });
+  check('请求 AI 前拿不准的图已隐藏', isLiveHidden('maybe-photo'));
+  await window.INS_Reader.noiseFilter.whenImagesClassified();
+  check('AI 判定 keep 后拿不准的图恢复', isLiveShown('maybe-photo'));
+  check('AI 恢复后广告横幅仍隐藏', isLiveHidden('ad-banner'));
+  check('AI 恢复后正文配图仍在', isLiveShown('article-photo'));
+  check('AI 恢复后 1×1 配图仍隐藏', isLiveHidden('inline-photo'));
 
   // ---- 总开关关闭：真实页面全部还原 ----
   applyNoise({ master: false, sidebar: true, comments: true, banners: true, videos: true });
@@ -212,6 +233,9 @@
   check('总开关关闭后评论还原', isLiveShown('bottom_sina_comment'));
   check('总开关关闭后视频还原', isLiveShown('article-video') && isLiveShown('side-video') && isLiveShown('video-shell'));
   check('总开关关闭后配图还原', isLiveShown('inline-photo'));
+  check('总开关关闭后正文配图仍在', isLiveShown('article-photo'));
+  check('总开关关闭后广告横幅还原', isLiveShown('ad-banner'));
+  check('总开关关闭后拿不准的图还原', isLiveShown('maybe-photo'));
   check('总开关关闭后标题仍在', isLiveShown('article-title') && isLiveShown('article-meta'));
   check('总开关关闭后底部图示还原', isLiveShown('article-bottom'));
   check('总开关关闭后特别声明还原', isLiveShown('disclaimer'));

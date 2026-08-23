@@ -97,9 +97,15 @@ def test_parse_structured() -> None:
     spans = _parse_structured("keyinfo", '{"spans":["片段一","  ","片段二",123]}')
     check("keyinfo 过滤空白与非字符串", spans["spans"] == ["片段一", "片段二"], str(spans))
 
+    keep = _parse_structured("imagenoise", '{"keep":[0,2,2,true,"x",1]}')
+    check("imagenoise 去重并丢掉非数字", keep["keep"] == [0, 2, 1], str(keep))
+    empty = _parse_structured("imagenoise", '{"keep":[]}')
+    check("imagenoise 允许空 keep", empty["keep"] == [], str(empty))
+
     expect_raises("全部条目无效应报错", lambda: _parse_structured("simplify", '{"paragraphs":[{"text":""}]}'))
     expect_raises("形状不符应报错", lambda: _parse_structured("simplify", '{"wrong":[]}'))
     expect_raises("顶层非对象应报错", lambda: _parse_structured("keyinfo", '["a","b"]'))
+    expect_raises("imagenoise 缺 keep 应报错", lambda: _parse_structured("imagenoise", '{"spans":[0]}'))
 
 
 def main() -> int:

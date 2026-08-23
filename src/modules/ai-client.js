@@ -3,12 +3,14 @@
 // 职责：调用 INS_Reader 后端的 AI 接口（后端持有 LLM Key，前端不接触密钥）。
 // 依赖 INS_Reader.prefsStore 读取 deviceId。后端不可用时功能整体降级为不可用，
 // 不影响正文定位/降噪/排版等核心本地功能。
-// 提供三个方法，对应后端的三个 mode：
+// 提供四个方法，对应后端的四个 mode：
 //   summarize(text)          → string，要点摘要文本；
 //   simplifyParagraphs(list) → [{ i, text }]，按传入段落顺序编号的改写结果；
-//   extractKeySpans(text)    → [string]，逐字取自原文的重点片段。
+//   extractKeySpans(text)    → [string]，逐字取自原文的重点片段；
+//   classifyImages(list)     → [number]，应恢复显示的图片编号。
 // 调用者：panel-ui.js 点击"生成摘要"调用 summarize()；ai-enhance.js 执行
-// 简化段落/高亮核心信息时调用后两者。
+// 简化段落/高亮核心信息时调用后两者；noise-filter.js 智能屏蔽拿不准的图时
+// 调用 classifyImages()。
 //
 // 实际网络请求不在这里直接 fetch：content script 的 fetch 会受宿主页面 CSP
 // （如知乎等站点的 connect-src 白名单）拦截，导致在部分网站上"无法连接 AI 服务"。
@@ -210,9 +212,32 @@ window.INS_Reader = window.INS_Reader || {};
     return valid;
   }
 
+  async function INS_classifyImages(items) {
+    if (!items || items.length === 0) return [];
+    const numbered = items
+      .map((item) => {
+        const i = item.i;
+        return `[${i}] src=${item.src || ''} size=${item.width || 0}x${item.height || 0} alt=${item.alt || ''} caption=${item.caption || ''} context=${item.context || ''}`;
+      })
+      .join('\n');
+    const resp = await INS_request(numbered, 'imagenoise');
+    const keep = resp.data && Array.isArray(resp.data.keep) ? resp.data.keep : null;
+    if (!keep) {
+      console.error('[INS_Reader][ai-client] imagenoise 响应缺少 keep 数组', { data: resp.data });
+      throw new Error('AI 服务返回格式异常');
+    }
+    const valid = keep.filter((i) => Number.isInteger(i) && i >= 0 && i < items.length);
+    console.log('[INS_Reader][ai-client] 图片分类成功', {
+      requested: items.length,
+      keep: valid.length,
+    });
+    return valid;
+  }
+
   window.INS_Reader.aiClient = {
     summarize: INS_summarize,
     simplifyParagraphs: INS_simplifyParagraphs,
     extractKeySpans: INS_extractKeySpans,
+    classifyImages: INS_classifyImages,
   };
 })();
