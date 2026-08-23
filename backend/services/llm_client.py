@@ -2,7 +2,8 @@
 
 缓读 · LLM 客户端
 职责：封装对 Anthropic Messages API（或兼容网关）的调用，密钥从环境变量读取，从不暴露给前端。
-调用者：仅 routers/ai.py 的 summarize_endpoint()，限流通过后调用本模块的 summarize()。
+调用者：仅 routers/ai.py 的 summarize_endpoint()，限流通过后调用本模块的 summarize()（mode=summary）
+或 rewrite()（mode=highlight，对应"拆分长段落/简化复杂长句/标记核心信息"三个子功能）。
 
 支持两种鉴权方式（二选一，优先使用网关模式）：
 - ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN：走内部/自建网关，用 Authorization: Bearer 传token
@@ -18,11 +19,36 @@ DEFAULT_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "45"))
 MAX_TEXT_CHARS = int(os.environ.get("LLM_MAX_TEXT_CHARS", "20000"))  # 超长正文直接截断，避免单次请求过大
+MAX_TIMEOUT_SECONDS = float(os.environ.get("LLM_MAX_TIMEOUT_SECONDS", "180"))
 
 SUMMARY_SYSTEM_PROMPT = (
     "你是一个帮助注意力容易分散的读者快速抓重点的助手。"
     "请用简洁的中文，输出3-5条要点摘要（每条一行，前面加“- ”），不要输出多余的开头或结尾语。"
 )
+
+HIGHLIGHT_INSTRUCTIONS = {
+    "break_long_paragraphs": "如果某一段过长（超过约120字，或包含多个话题/转折），将其拆分为多个 <p> 段落，让每段只讲一件事；段落不长就保持原样。",
+    "simplify_sentences": "把冗长、结构复杂的长句改写成更短、更直白的句子，但不要改变原意、不要删减信息。",
+    "mark_key_info": "在每段里挑出 1-2 句最关键的信息（结论、数字、结果等），用 <mark> 标签包裹。不要整段都标记，只标最核心的句子。",
+}
+
+HIGHLIGHT_SYSTEM_PROMPT_HEADER = (
+    "你是一个帮助阅读障碍/注意力容易分散的读者更轻松阅读长文章的助手。"
+    "下面会给你一篇文章正文，请按以下要求处理后，仅输出处理后的正文 HTML：\n"
+)
+
+HIGHLIGHT_SYSTEM_PROMPT_FOOTER = (
+    "\n严格要求：只使用 <p> 和 <mark> 两种标签；不要输出 Markdown 代码块（```），"
+    "不要输出任何解释、开头语或结尾语；不要遗漏原文信息；直接从 <p> 开始输出。"
+)
+
+
+def _build_highlight_system_prompt(options: dict) -> str:
+    enabled_keys = [key for key, on in (options or {}).items() if on and key in HIGHLIGHT_INSTRUCTIONS]
+    if not enabled_keys:
+        enabled_keys = list(HIGHLIGHT_INSTRUCTIONS.keys())
+    instructions = "\n".join(f"{i + 1}. {HIGHLIGHT_INSTRUCTIONS[key]}" for i, key in enumerate(enabled_keys))
+    return f"{HIGHLIGHT_SYSTEM_PROMPT_HEADER}{instructions}{HIGHLIGHT_SYSTEM_PROMPT_FOOTER}"
 
 
 class LLMError(Exception):
@@ -70,7 +96,7 @@ def _resolve_endpoint_and_headers() -> tuple[str, dict, bool]:
     )
 
 
-async def summarize(text: str) -> str:
+async def _call_llm(system_prompt: str, text: str, max_tokens: int) -> str:
     endpoint, headers, trust_env = _resolve_endpoint_and_headers()
 
     truncated = text.strip()[:MAX_TEXT_CHARS]
@@ -78,12 +104,15 @@ async def summarize(text: str) -> str:
         raise LLMError("正文内容为空", status_code=400)
 
     started_at = time.perf_counter()
-    timeout = httpx.Timeout(DEFAULT_TIMEOUT_SECONDS, connect=10.0)
+    # 高亮/改写等长文本请求耗时远高于短摘要，固定 45s 超时对长文章不够用；
+    # 按文本长度动态放宽超时（下限用 DEFAULT_TIMEOUT_SECONDS，上限用 MAX_TIMEOUT_SECONDS 兜底）。
+    timeout_seconds = min(MAX_TIMEOUT_SECONDS, max(DEFAULT_TIMEOUT_SECONDS, 30 + len(truncated) / 200))
+    timeout = httpx.Timeout(timeout_seconds, connect=10.0)
 
     payload = {
         "model": MODEL,
-        "max_tokens": 512,
-        "system": SUMMARY_SYSTEM_PROMPT,
+        "max_tokens": max_tokens,
+        "system": system_prompt,
         "messages": [{"role": "user", "content": truncated}],
     }
 
@@ -94,7 +123,7 @@ async def summarize(text: str) -> str:
             "model": MODEL,
             "text_length": len(truncated),
             "max_text_chars": MAX_TEXT_CHARS,
-            "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+            "timeout_seconds": timeout_seconds,
             "trust_env": trust_env,
         },
         flush=True,
@@ -109,7 +138,7 @@ async def summarize(text: str) -> str:
             "[INS_Reader][llm_client] 上游 LLM 响应超时",
             {
                 "elapsed_seconds": round(elapsed, 2),
-                "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+                "timeout_seconds": timeout_seconds,
                 "endpoint": endpoint,
                 "text_length": len(truncated),
                 "exception": repr(exc),
@@ -117,7 +146,7 @@ async def summarize(text: str) -> str:
             flush=True,
         )
         raise LLMError(
-            f"上游 LLM 网关响应超时（{DEFAULT_TIMEOUT_SECONDS:g}s，文本长度 {len(truncated)}）"
+            f"上游 LLM 网关响应超时（{timeout_seconds:g}s，文本长度 {len(truncated)}）"
         ) from exc
     except httpx.RequestError as exc:
         elapsed = time.perf_counter() - started_at
@@ -171,4 +200,21 @@ async def summarize(text: str) -> str:
     )
     if not result:
         raise LLMError("LLM 服务返回内容为空", status_code=502)
+    return result
+
+
+async def summarize(text: str) -> str:
+    return await _call_llm(SUMMARY_SYSTEM_PROMPT, text, max_tokens=512)
+
+
+async def rewrite(text: str, options: dict) -> str:
+    system_prompt = _build_highlight_system_prompt(options)
+    result = await _call_llm(system_prompt, text, max_tokens=4096)
+    # 个别模型偶尔仍会用 Markdown 代码块包裹输出，兜底剥掉
+    result = result.strip()
+    if result.startswith("```"):
+        result = result.split("\n", 1)[-1]
+        if result.endswith("```"):
+            result = result[: -len("```")]
+        result = result.strip()
     return result

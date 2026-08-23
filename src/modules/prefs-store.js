@@ -16,6 +16,7 @@ window.INS_Reader = window.INS_Reader || {};
     letterSpacing: 0,
     fontFamily: 'default', // 新增：default | serif | sans-serif | monospace
     contentWidth: 'wide', // wide | narrow
+    typographyEnabled: true, // 排版模块总开关（展示在排版栏目标题行），关闭后阅读层改用系统默认外观
     noiseReduction: true,
     noiseOptions: {
       ads: true,
@@ -23,8 +24,8 @@ window.INS_Reader = window.INS_Reader || {};
       comments: true,
       banners: true,
       marketing: true,
-      pauseAutoplay: true, // 视频动画：暂停自动播放（作用于原页面媒体元素，不删节点）
-      blockAllVideos: false, // 屏蔽所有视频：默认关闭，可能连正文视频一起屏蔽
+      video: false, // 视频（暂停播放并隐藏）：合并开关，同时暂停原页面自动播放 + 从克隆体里摘掉视频容器；
+      // 默认关闭——部分站点正文本身就是视频，摘掉视频容器可能让阅读层空掉
     },
     customColors: { bg: '#fbfcfa', text: '#3b4540' },
     aiEnabled: false, // AI 内容助手模块总开关（展示在一级入口界面）

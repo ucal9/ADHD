@@ -10,7 +10,7 @@ import time
 from collections import defaultdict, deque
 
 WINDOW_SECONDS = 60
-MAX_REQUESTS_PER_WINDOW = 5
+MAX_REQUESTS_PER_WINDOW = 20
 
 _hits: dict[str, deque] = defaultdict(deque)
 

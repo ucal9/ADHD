@@ -36,7 +36,8 @@
 
 ### 🧩 设计取舍
 
-- 不做"暴力隐藏兄弟元素"，避免 grid/flex 布局跑位
+- 缓读模式的正文提取/排版/AI 处理全部作用于页面克隆体，不做"暴力隐藏兄弟元素"，避免 grid/flex 布局跑位
+- 降噪功能与缓读模式解耦、独立生效：会直接、可逆地隐藏真实页面上的对应元素（不需要进入缓读模式），这是刻意接受的取舍——效果更贴近用户预期的"广告拦截器"体验，与常规广告拦截插件的风险模型一致
 - 不做"AI 全权代打"，保留用户对降噪粒度的控制权
 - 核心阅读功能纯本地处理，断网可用；AI 摘要是可选的增值功能，默认关闭，开启后才会将正文发给后端
 
@@ -51,7 +52,7 @@
 | 功能 | 说明 |
 |---|---|
 | 🧠 **智能正文定位** | Readability.js 优先定位，失败时自动降级到语义标签 + 文本密度算法 |
-| 🧹 **动态降噪** | 广告 / 侧边栏导航 / 评论区 / 弹窗横幅 / 会员推销，五类干扰元素独立开关 |
+| 🧹 **动态降噪** | 侧边栏导航 / 评论区 / 弹窗横幅 / 视频（暂停播放并隐藏），四类干扰元素独立开关（广告/会员推销按默认值生效，不作为用户可调开关暴露）；直接作用于真实页面，独立于缓读模式生效 |
 | 🎨 **主题切换** | 温和 · 专注 · 自定义配色，三种阅读氛围 |
 | 🔠 **排版微调** | 字号 14–28px、行间距、字间距均可无级调节 |
 | 📏 **内容宽度** | 宽版 900px / 窄版 640px，适配不同阅读习惯 |
@@ -107,7 +108,8 @@ ins-reader-extension/
 │   └── modules/
 │       ├── prefs-store.js      # 偏好存取（chrome.storage.sync）
 │       ├── article-locator.js  # 正文定位（Readability + 降级算法）
-│       ├── noise-filter.js     # 降噪清理规则
+│       ├── noise-filter.js     # 降噪清理规则（作用于克隆体，服务缓读模式）
+│       ├── live-noise-filter.js # 降噪清理规则（直接作用于真实页面，独立于缓读模式生效）
 │       ├── dom-path.js         # 克隆体节点重定位工具
 │       ├── reading-stats.js    # 阅读时长估算 / 滚动进度
 │       ├── ai-client.js        # 调用后端 AI 摘要代理
@@ -138,7 +140,7 @@ flowchart LR
 | 模块 | 技术选型 |
 |---|---|
 | 正文抽取 | [Mozilla Readability.js](https://github.com/mozilla/readability) v0.5.0（MIT） |
-| 降噪清理 | 自研 CSS 选择器规则组，作用于 body 克隆体 |
+| 降噪清理 | 自研 CSS 选择器规则组；同一份规则组同时驱动两条独立链路——克隆体上移除节点（服务缓读模式）+ 真实页面上 class 开关可逆隐藏（独立生效，见 `live-noise-filter.js`） |
 | 样式隔离 | Shadow DOM（`:host { all: initial; }`） |
 | 数据持久化 | `chrome.storage.sync`，跨设备同步用户偏好 |
 | AI 摘要 | 后端代理调用 LLM API，前端不持有密钥（详见下节） |
@@ -194,9 +196,12 @@ renderReaderLayer():
   记录 articleSourceRoot 相对 document.body 的子节点下标路径 path
   bodyClone ← document.body.cloneNode(true)     // 克隆整个 body 而非只克隆正文，
                                                   // 让广告/侧边栏等平级干扰元素一起被克隆进来
-  for each 开启的降噪类别 in [ads, sidebar, comments, banners, marketing]:
+  按 path 在**未清理**的 bodyClone 中先定位出正文节点 clone，拿到节点引用
+                                                  // 必须在清理前定位：清理会删除 clone 之外/
+                                                  // 之前的兄弟节点，导致按下标记录的 path 失效
+  for each 开启的降噪类别 in [sidebar, comments, banners, video]（面板可调）
+                          + [ads, marketing]（按默认值生效，不作为开关暴露）:
     用对应 CSS 选择器组在 bodyClone 中 querySelectorAll，逐个 remove()
-  按 path 在清理后的 bodyClone 中重新定位出正文节点 clone
   在独立 Shadow DOM 宿主（position:fixed 全屏层）中：
     注入主题配色 / 字号 / 行距 / 字距 / 内容宽度对应样式
     挂载 clone 展示
@@ -314,7 +319,7 @@ Content-Type: application/json
 ## 🗺️ Roadmap
 
 - [x] 正文定位（Readability + 降级算法）
-- [x] 五类干扰元素独立降噪
+- [x] 四类干扰元素独立降噪（侧边栏/评论区/弹窗横幅/视频（暂停播放并隐藏））
 - [x] 沉浸阅读层 + 主题/字号/行距/字距/宽度自定义
 - [x] 阅读进度条 + 剩余时间估算
 - [x] AI 摘要代理（FastAPI 后端，密钥不落前端）

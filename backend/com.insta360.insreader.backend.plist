@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Copyright (c) 2026 Insta360. All rights reserved.
+
+  INS_Reader 后端服务的 launchd 开机自启配置。
+  作用：让 backend/main.py（FastAPI，AI 摘要转发服务）在系统启动/用户登录时自动
+  以 uvicorn 常驻进程运行，监听 http://localhost:8000，供 Chrome 插件的
+  background.js 转发 AI 摘要请求使用。核心阅读功能不依赖此服务。
+
+  安装方法（在终端执行）：
+    mkdir -p ~/Library/LaunchAgents
+    cp /Users/xiezhilong/Desktop/ADHD/backend/com.insta360.insreader.backend.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.insta360.insreader.backend.plist
+
+  卸载方法：
+    launchctl unload ~/Library/LaunchAgents/com.insta360.insreader.backend.plist
+    rm ~/Library/LaunchAgents/com.insta360.insreader.backend.plist
+
+  查看日志：
+    tail -f /Users/xiezhilong/Desktop/ADHD/backend/logs/stdout.log
+    tail -f /Users/xiezhilong/Desktop/ADHD/backend/logs/stderr.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.insta360.insreader.backend</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/xiezhilong/Desktop/ADHD/backend/venv/bin/uvicorn</string>
+        <string>main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xiezhilong/Desktop/ADHD/backend</string>
+
+    <!-- 登录时自动启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 进程异常退出时自动重启（但不是永久重启循环：KeepAlive 配合下面的
+         节流条件，避免配置错误导致的崩溃循环占满系统资源） -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- 两次重启之间至少间隔的秒数，防止崩溃循环 -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/xiezhilong/Desktop/ADHD/backend/logs/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/xiezhilong/Desktop/ADHD/backend/logs/stderr.log</string>
+
+    <!-- 保证 PATH 等基础环境变量存在，venv 已在 ProgramArguments 里用绝对路径
+         指定,不依赖 shell 的 activate 脚本 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin</string>
+    </dict>
+</dict>
+</plist>

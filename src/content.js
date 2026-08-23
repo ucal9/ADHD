@@ -10,10 +10,12 @@
 // panel-ui.js 通过 appController.applyAll()/restoreOriginalPage() 回调本文件的编排逻辑。
 
 (function () {
-  const { prefsStore, readerLayer, panelUI } = window.INS_Reader;
+  const { prefsStore, readerLayer, panelUI, liveNoiseFilter } = window.INS_Reader;
 
   function INS_applyAll() {
     const prefs = prefsStore.get();
+    // 降噪与缓读模式解耦：无论 prefs.enabled 是否为 true 都要同步真实页面的降噪状态。
+    liveNoiseFilter.sync();
     if (!prefs.enabled) {
       readerLayer.remove();
       readerLayer.unlockOriginalPage();
@@ -33,6 +35,7 @@
     readerLayer.remove();
     readerLayer.unlockOriginalPage();
     readerLayer.setSummary('');
+    readerLayer.setHighlightHtml('');
     prefsStore.save();
     panelUI.render();
   }
@@ -43,6 +46,8 @@
 
   // ---- 初始化 ----
   prefsStore.load().then((prefs) => {
+    // 降噪独立于缓读模式生效，页面刚加载、缓读模式尚未开启时也要先同步一次。
+    liveNoiseFilter.sync();
     if (prefs.enabled) INS_applyAll();
   });
 
