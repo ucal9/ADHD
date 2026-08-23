@@ -38,12 +38,61 @@ window.INS_Reader = window.INS_Reader || {};
     },
     presets: [], // 新增：预设数组，每项 { name, timestamp, prefs }
     activePreset: '', // 当前激活的预设名称，默认模式使用“默认模式”
-    hasCustomized: false, // 用户首次修改设置后显示“默认模式”胶囊
-    hasActivated: false, // 首次点击总开关时写入严格默认配置
+    hasCustomized: false, // 用户改过设置后，入口/详细配置显示“默认模式”选中态
+    hasActivated: false, // 已走过默认模式或详细配置；未激活时进详细配置才套全关模板
+    defaultModeBackup: null, // 点选默认模式前的设置快照，取消选中时还原
     deviceId: '', // 首次 load() 时生成并持久化，用于后端限流，不含任何身份信息
   };
 
+  const UI_NOISE_KEYS = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
+
   const state = { prefs: { ...DEFAULT_PREFS } };
+
+  function INS_syncEnabled(prefs) {
+    prefs.enabled = Boolean(prefs.typographyEnabled) || Boolean(prefs.aiEnabled) || Boolean(prefs.noiseReduction);
+    return prefs.enabled;
+  }
+
+  function INS_isUnactivated(prefs) {
+    return !prefs.hasActivated && !prefs.hasCustomized;
+  }
+
+  function INS_anyNoiseUiOn(prefs) {
+    const groups = prefs.noiseOptions || {};
+    return UI_NOISE_KEYS.some((key) => groups[key]);
+  }
+
+  function INS_anyAiFeatureOn(prefs) {
+    const highlight = prefs.aiHighlight || {};
+    return Boolean(highlight.breakLongParagraphs || highlight.simplifySentences || highlight.markKeyInfo);
+  }
+
+  // 详细配置在从未激活时使用：一级、二级全关，排版数值仍用默认，页面保持原网页。
+  function INS_applyAllOffModules(prefs) {
+    prefs.typographyEnabled = false;
+    prefs.aiEnabled = false;
+    prefs.noiseReduction = false;
+    prefs.noiseOptions = {
+      ...prefs.noiseOptions,
+      ads: false,
+      sidebar: false,
+      comments: false,
+      banners: false,
+      marketing: false,
+      pauseAutoplay: false,
+      blockAllVideos: false,
+    };
+    prefs.aiSummary = false;
+    prefs.aiHighlight = {
+      ...prefs.aiHighlight,
+      enabled: false,
+      breakLongParagraphs: false,
+      simplifySentences: false,
+      markKeyInfo: false,
+    };
+    prefs.activePreset = '';
+    INS_syncEnabled(prefs);
+  }
 
   function INS_load() {
     return new Promise((resolve) => {
@@ -60,6 +109,11 @@ window.INS_Reader = window.INS_Reader || {};
           state.prefs.deviceId = crypto.randomUUID();
           INS_save();
         }
+        // 旧版本没有 hasActivated：曾经启用过或改过设置，不算「从未激活」，
+        // 再进详细配置时保留当前开关，而不是套全关模板。
+        if (!Object.prototype.hasOwnProperty.call(stored, 'hasActivated')) {
+          state.prefs.hasActivated = Boolean(stored.enabled || stored.hasCustomized || stored.activePreset);
+        }
         resolve(state.prefs);
       });
     });
@@ -75,8 +129,14 @@ window.INS_Reader = window.INS_Reader || {};
 
   window.INS_Reader.prefsStore = {
     DEFAULT_PREFS,
+    UI_NOISE_KEYS,
     load: INS_load,
     save: INS_save,
     get: INS_get,
+    syncEnabled: INS_syncEnabled,
+    isUnactivated: INS_isUnactivated,
+    anyNoiseUiOn: INS_anyNoiseUiOn,
+    anyAiFeatureOn: INS_anyAiFeatureOn,
+    applyAllOffModules: INS_applyAllOffModules,
   };
 })();

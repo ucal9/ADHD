@@ -117,6 +117,7 @@
   function applyNoise({ master = true, sidebar, comments, banners, videos }) {
     const prefs = prefsStore.get();
     prefs.enabled = true;
+    prefs.typographyEnabled = false;
     prefs.noiseReduction = master;
     prefs.noiseOptions.sidebar = sidebar;
     prefs.noiseOptions.comments = comments;

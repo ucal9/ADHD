@@ -2,7 +2,7 @@
 // INS_Reader · 沉浸阅读层模块
 // 职责：阅读模式有两条路径——
 //   降噪未全开：不盖阅读层，在真实页面上按开关隐藏噪音（不拆节点，保留原布局）；
-//   动态降噪始终在真实页面上执行，保留网页原生布局；正文阅读层不由降噪开关触发。
+//   四个细分全开：在 Shadow DOM 里只展示正文克隆。
 // 不修改原页面的父子结构。
 // 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath /
 // readingStats / aiEnhance。
@@ -18,8 +18,6 @@
 window.INS_Reader = window.INS_Reader || {};
 
 (function () {
-  const LIVE_TYPO_ATTR = 'data-ins-typography';
-  const LIVE_TYPO_STYLE_ID = 'ins-reader-live-typography-style';
   const LIVE_SUMMARY_ID = 'ins-reader-live-summary';
 
   const state = {
@@ -137,9 +135,30 @@ window.INS_Reader = window.INS_Reader || {};
     }
   }
 
+  const LIVE_TYPO_STYLE_ID = 'ins-reader-live-typography';
+  const LIVE_TYPO_HTML_CLASS = 'ins-reader-live-typo';
+  const LIVE_TYPO_ARTICLE_CLASS = 'ins-reader-live-typo-article';
+  const LIVE_TYPO_HEADLINE_CLASS = 'ins-reader-live-typo-headline';
+
+  function INS_liveFontFamily(prefs) {
+    const fontFamilyMap = {
+      default: '"Noto Sans SC", -apple-system, sans-serif',
+      serif: '"Noto Serif SC", serif',
+      'sans-serif': '"Noto Sans SC", -apple-system, sans-serif',
+      monospace: '"Noto Sans Mono", monospace',
+    };
+    return fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
+  }
+
+  // 未进正文阅读层时，排版只能作用在真实页面上：用一份可卸载的 stylesheet + class，
+  // 不改节点结构。阅读层 overlay 有自己的样式，进入 overlay 前必须清掉这份注入。
   function INS_clearLiveTypography() {
-    document.querySelectorAll(`[${LIVE_TYPO_ATTR}]`).forEach((el) => {
-      el.removeAttribute(LIVE_TYPO_ATTR);
+    document.documentElement.classList.remove(LIVE_TYPO_HTML_CLASS);
+    document.querySelectorAll(`.${LIVE_TYPO_ARTICLE_CLASS}`).forEach((el) => {
+      el.classList.remove(LIVE_TYPO_ARTICLE_CLASS);
+    });
+    document.querySelectorAll(`.${LIVE_TYPO_HEADLINE_CLASS}`).forEach((el) => {
+      el.classList.remove(LIVE_TYPO_HEADLINE_CLASS);
     });
     const style = document.getElementById(LIVE_TYPO_STYLE_ID);
     if (style) style.remove();
@@ -180,41 +199,39 @@ window.INS_Reader = window.INS_Reader || {};
     sourceNode.insertBefore(summary, sourceNode.firstChild);
   }
 
-  // 实时模式只覆盖正文文字样式，不修改 display/position/width/grid 等布局属性。
   function INS_applyLiveTypography(sourceNode, prefs) {
     INS_clearLiveTypography();
-    if (!sourceNode || !prefs.typographyEnabled) return;
+    if (prefs.typographyEnabled === false) return;
 
-    sourceNode.setAttribute(LIVE_TYPO_ATTR, 'true');
-    let style = document.getElementById(LIVE_TYPO_STYLE_ID);
-    if (!style) {
-      style = document.createElement('style');
-      style.id = LIVE_TYPO_STYLE_ID;
-      document.documentElement.appendChild(style);
-    }
-    const fontFamilyMap = {
-      default: 'system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
-      serif: '"Songti SC", "SimSun", "Noto Serif SC", serif',
-      'sans-serif': 'system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
-      monospace: 'ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace',
-    };
-    const fontFamily = fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
-    const textNodes = `[${LIVE_TYPO_ATTR}], [${LIVE_TYPO_ATTR}] p, [${LIVE_TYPO_ATTR}] h1, [${LIVE_TYPO_ATTR}] h2, [${LIVE_TYPO_ATTR}] h3, [${LIVE_TYPO_ATTR}] h4, [${LIVE_TYPO_ATTR}] h5, [${LIVE_TYPO_ATTR}] h6, [${LIVE_TYPO_ATTR}] li, [${LIVE_TYPO_ATTR}] blockquote, [${LIVE_TYPO_ATTR}] figcaption, [${LIVE_TYPO_ATTR}] td, [${LIVE_TYPO_ATTR}] th`;
+    const theme = { ...prefs.customColors };
+    const fontFamily = INS_liveFontFamily(prefs);
+    const article = sourceNode || state.articleSourceRoot;
+    if (article && article.nodeType === 1) article.classList.add(LIVE_TYPO_ARTICLE_CLASS);
+    const { title, meta } = window.INS_Reader.articleLocator.findHeadline(document);
+    [title, meta].filter(Boolean).forEach((el) => el.classList.add(LIVE_TYPO_HEADLINE_CLASS));
+    document.documentElement.classList.add(LIVE_TYPO_HTML_CLASS);
+
+    const style = document.createElement('style');
+    style.id = LIVE_TYPO_STYLE_ID;
     style.textContent = `
-      [${LIVE_TYPO_ATTR}] {
-        background-color: ${prefs.customColors.bg} !important;
-        color: ${prefs.customColors.text} !important;
-        font-family: ${fontFamily} !important;
+      html.${LIVE_TYPO_HTML_CLASS},
+      html.${LIVE_TYPO_HTML_CLASS} body {
+        background: ${theme.bg} !important;
       }
-      ${textNodes} {
-        color: ${prefs.customColors.text} !important;
+      .${LIVE_TYPO_ARTICLE_CLASS},
+      .${LIVE_TYPO_ARTICLE_CLASS} p,
+      .${LIVE_TYPO_HEADLINE_CLASS} {
+        color: ${theme.text} !important;
         font-family: ${fontFamily} !important;
         font-size: ${prefs.fontSize}px !important;
         line-height: ${prefs.lineHeight} !important;
         letter-spacing: ${prefs.letterSpacing}em !important;
       }
-      [${LIVE_TYPO_ATTR}] p { margin-bottom: ${prefs.paragraphSpacing}em !important; }
+      .${LIVE_TYPO_ARTICLE_CLASS} p {
+        margin-bottom: ${prefs.paragraphSpacing}em !important;
+      }
     `;
+    document.documentElement.appendChild(style);
   }
 
   function INS_teardownOverlay() {
@@ -345,13 +362,7 @@ window.INS_Reader = window.INS_Reader || {};
     const maxWidth = prefs.contentWidth === 'narrow' ? '640px' : '900px';
 
     // 字体映射
-    const fontFamilyMap = {
-      default: '"Noto Sans SC", -apple-system, sans-serif',
-      serif: '"Noto Serif SC", serif',
-      'sans-serif': '"Noto Sans SC", -apple-system, sans-serif',
-      monospace: '"Noto Sans Mono", monospace',
-    };
-    const fontFamily = fontFamilyMap[prefs.fontFamily] || fontFamilyMap.default;
+    const fontFamily = INS_liveFontFamily(prefs);
 
     const style = document.createElement('style');
     style.textContent = `

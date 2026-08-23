@@ -321,6 +321,12 @@ window.INS_Reader = window.INS_Reader || {};
   // 阅读层每次 render() 都会重建克隆体，之前落地的改写和高亮随旧克隆体一起消失。
   // 这里只用缓存重新落地，不发起任何网络请求，所以改字号/换配色不会触发 AI 调用。
   function INS_reapply() {
+    const prefs = window.INS_Reader.prefsStore.get();
+    if (!prefs.aiEnabled) {
+      if (state.simplifyActive) INS_clearSimplify();
+      if (state.keyInfoActive) INS_clearKeyInfo();
+      return;
+    }
     if (!state.simplifyActive && !state.keyInfoActive) return;
     const { root } = INS_getContext();
     if (!root) return;

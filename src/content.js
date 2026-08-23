@@ -12,12 +12,12 @@
 
   function INS_applyAll() {
     const prefs = prefsStore.get();
+    prefsStore.syncEnabled(prefs);
     if (!prefs.enabled) {
       readerLayer.remove();
       readerLayer.clearFeasibilityReason();
       readerLayer.unlockOriginalPage();
-      // 退出阅读模式后正文重新落在真实页面上：已生成的 AI 改写/高亮要跟着搬过去，
-      // 否则用户看到开关是开的但页面上没有效果。走缓存，不重复请求。
+      // 三个一级都关时卸掉 AI 落地效果；aiEnabled 仍开时才把缓存搬回真实页面。
       aiEnhance.reapply();
       return;
     }
@@ -30,20 +30,18 @@
     }
   }
 
-  // 所有“关闭阅读模式”的入口都走同一状态转换。总开关关闭期间，一级模块
-  // 保持默认开启态但不可操作；重新开启总开关即可一次恢复三项一级功能。
+  // 恢复原网页：关掉三个一级（二级保留），派生 enabled=false，页面回到未处理状态。
   function INS_deactivateReadingMode() {
     const prefs = prefsStore.get();
-    prefs.enabled = false;
     prefs.activePreset = '';
-    prefs.typographyEnabled = true;
-    prefs.aiEnabled = true;
-    prefs.noiseReduction = true;
+    prefs.typographyEnabled = false;
+    prefs.aiEnabled = false;
+    prefs.noiseReduction = false;
+    prefsStore.syncEnabled(prefs);
     readerLayer.remove();
     readerLayer.clearFeasibilityReason();
     readerLayer.unlockOriginalPage();
     readerLayer.setSummary('');
-    // 恢复原网页要求页面回到零改动状态：撤销 AI 段落改写与高亮，并收起浮层卡片。
     aiEnhance.clearAll();
     aiCard.dismiss();
     prefsStore.save();
@@ -74,7 +72,7 @@
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === 'INS_READER_TOGGLE_PANEL') {
-      // 打开详细配置不等于启用阅读模式；只有用户明确点击总开关才改变 enabled。
+      // 打开入口面板不改变开关；默认模式全开，详细配置仅在从未激活时套全关模板。
       readyPromise
         .then(() => {
           panelUI.openQuick();
