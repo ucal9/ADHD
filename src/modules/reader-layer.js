@@ -20,6 +20,7 @@ window.INS_Reader = window.INS_Reader || {};
 (function () {
   const LIVE_TYPO_ATTR = 'data-ins-typography';
   const LIVE_TYPO_STYLE_ID = 'ins-reader-live-typography-style';
+  const LIVE_SUMMARY_ID = 'ins-reader-live-summary';
 
   const state = {
     readerHost: null,
@@ -144,6 +145,41 @@ window.INS_Reader = window.INS_Reader || {};
     if (style) style.remove();
   }
 
+  function INS_clearLiveSummary() {
+    document.querySelectorAll(`#${LIVE_SUMMARY_ID}`).forEach((el) => el.remove());
+  }
+
+  // 原生页面模式下把摘要放在正文容器顶部，作为普通文档内容参与页面布局和滚动，
+  // 不使用 fixed/absolute 悬浮，也不依赖 AI 状态卡片。
+  function INS_renderLiveSummary(sourceNode, text) {
+    INS_clearLiveSummary();
+    if (!sourceNode || !text) return;
+    const summary = document.createElement('section');
+    summary.id = LIVE_SUMMARY_ID;
+    summary.setAttribute('aria-label', 'AI 摘要');
+    summary.style.cssText = `
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      margin: 0 0 24px;
+      padding: 14px 18px;
+      color: #3b4540;
+      background: #FFF3CC;
+      border: 1px solid #FFB800;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-line;
+    `;
+    const title = document.createElement('strong');
+    title.textContent = 'AI 摘要';
+    title.style.cssText = 'display:block; margin-bottom:6px; color:#7A5800; font-size:13px;';
+    const body = document.createElement('div');
+    body.textContent = text;
+    summary.append(title, body);
+    sourceNode.insertBefore(summary, sourceNode.firstChild);
+  }
+
   // 实时模式只覆盖正文文字样式，不修改 display/position/width/grid 等布局属性。
   function INS_applyLiveTypography(sourceNode, prefs) {
     INS_clearLiveTypography();
@@ -193,10 +229,12 @@ window.INS_Reader = window.INS_Reader || {};
     const { noiseFilter } = window.INS_Reader;
     state.livePageMode = true;
     INS_teardownOverlay();
+    INS_clearLiveSummary();
+    state.articleText = sourceNode.textContent || '';
+    INS_renderLiveSummary(sourceNode, state.summaryText);
     INS_setHiddenCount(noiseFilter.applyLiveHide(sourceNode));
     INS_applyLiveTypography(sourceNode, prefs);
     INS_syncAutoplay(prefs);
-    state.articleText = sourceNode.textContent || '';
     // 落点留在真实正文，aiEnhance 会走原页面分支而不是 Shadow。
     state.renderedArticle = null;
     window.INS_Reader.aiEnhance.reapply();
@@ -224,6 +262,7 @@ window.INS_Reader = window.INS_Reader || {};
 
     noiseFilter.clearLiveHide();
     INS_clearLiveTypography();
+    INS_clearLiveSummary();
     state.livePageMode = false;
 
     const host = INS_ensureReaderHost();
@@ -353,6 +392,7 @@ window.INS_Reader = window.INS_Reader || {};
   function INS_remove() {
     window.INS_Reader.noiseFilter.clearLiveHide();
     INS_clearLiveTypography();
+    INS_clearLiveSummary();
     INS_restoreAutoplayMedia();
     INS_setHiddenCount(0);
     state.renderedArticle = null;
