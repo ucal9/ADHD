@@ -113,6 +113,7 @@ window.INS_Reader = window.INS_Reader || {};
     top.append(title, close);
     card.appendChild(top);
 
+
     for (const [feature, entry] of state.entries) {
       const row = document.createElement('div');
       row.className = `row ${entry.status}`;

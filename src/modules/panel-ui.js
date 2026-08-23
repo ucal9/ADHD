@@ -119,6 +119,24 @@ window.INS_Reader = window.INS_Reader || {};
     prefs.activePreset = '';
   }
 
+  // 一级模块重新开启时，恢复该模块所有二级开关；不重置排版数值、配色等用户配置，
+  // 也不主动触发 AI 请求，避免一次点击产生未经确认的内容上传或改写。
+  function INS_enableAllNoiseOptions(prefs) {
+    Object.keys(prefs.noiseOptions || {}).forEach((key) => {
+      prefs.noiseOptions[key] = true;
+    });
+  }
+
+  function INS_enableAllAiFeatures(prefs) {
+    prefs.aiSummary = true;
+    Object.assign(prefs.aiHighlight, {
+      enabled: true,
+      breakLongParagraphs: true,
+      simplifySentences: true,
+      markKeyInfo: true,
+    });
+  }
+
   function INS_resetToStrictDefaults(prefs) {
     const savedPresets = prefs.presets;
     const deviceId = prefs.deviceId;
@@ -552,6 +570,8 @@ window.INS_Reader = window.INS_Reader || {};
         prefs.typographyEnabled = true;
         prefs.aiEnabled = true;
         prefs.noiseReduction = true;
+        INS_enableAllNoiseOptions(prefs);
+        INS_enableAllAiFeatures(prefs);
         prefs.enabled = true;
         prefs.hasActivated = true;
         prefsStore.save();
@@ -691,7 +711,6 @@ window.INS_Reader = window.INS_Reader || {};
         INS_render();
       });
     }
-
     // 降噪菜单展开/收起 - 注意这里只控制展开/收起，不同时改变 noiseReduction 状态
     const noiseToggle = panel.querySelector('[data-role="noise-toggle"]');
     const noiseMenu = panel.querySelector('[data-role="noise-menu"]');
@@ -710,14 +729,15 @@ window.INS_Reader = window.INS_Reader || {};
       noiseMasterSwitch.addEventListener('click', (e) => {
         e.stopPropagation();
         if (noiseMasterSwitch.disabled || !prefs.enabled) return;
-        prefs.noiseReduction = !prefs.noiseReduction;
+        const enableNoise = !prefs.noiseReduction;
+        prefs.noiseReduction = enableNoise;
+        if (enableNoise) INS_enableAllNoiseOptions(prefs);
         INS_markCustomized(prefs);
         prefsStore.save();
         appController.applyAll();
         INS_render();
       });
     }
-
     // AI 菜单展开/收起
     const aiToggle = panel.querySelector('[data-role="ai-toggle"]');
     const aiMenu = panel.querySelector('[data-role="ai-menu"]');
@@ -729,6 +749,20 @@ window.INS_Reader = window.INS_Reader || {};
         aiToggle.setAttribute('aria-expanded', String(state.expandedMenus.ai));
         aiMenu.classList.toggle('expanded');
         aiMenu.style.maxHeight = state.expandedMenus.ai ? `${aiMenu.scrollHeight}px` : '0px';
+      });
+    }
+
+    const aiMasterSwitch = panel.querySelector('[data-role="ai-master-switch"]');
+    if (aiMasterSwitch) {
+      aiMasterSwitch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (aiMasterSwitch.disabled || !prefs.enabled) return;
+        const enableAi = !prefs.aiEnabled;
+        prefs.aiEnabled = enableAi;
+        if (enableAi) INS_enableAllAiFeatures(prefs);
+        INS_markCustomized(prefs);
+        prefsStore.save();
+        INS_render();
       });
     }
 
@@ -744,21 +778,11 @@ window.INS_Reader = window.INS_Reader || {};
         prefs.typographyEnabled = true;
         prefs.aiEnabled = true;
         prefs.noiseReduction = true;
+        INS_enableAllNoiseOptions(prefs);
+        INS_enableAllAiFeatures(prefs);
         prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
-        INS_render();
-      });
-    }
-
-    const aiMasterSwitch = panel.querySelector('[data-role="ai-master-switch"]');
-    if (aiMasterSwitch) {
-      aiMasterSwitch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (aiMasterSwitch.disabled || !prefs.enabled) return;
-        prefs.aiEnabled = !prefs.aiEnabled;
-        INS_markCustomized(prefs);
-        prefsStore.save();
         INS_render();
       });
     }

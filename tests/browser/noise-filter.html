@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- 缓读 · 动态降噪本地验证页（仅开发用，不属于插件运行时）
-     验证未全开时在真实页面上按开关隐藏，四开关全开时才进入正文阅读层。 -->
+     验证所有降噪组合始终保留原生布局，不进入正文阅读层。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -132,25 +132,19 @@
     firstRender === false ? `reason=${readerLayer.getLastFeasibilityReason()}` : ''
   );
 
-  // ---- 四开关全开：正文阅读层 ----
-  check('全开时进入正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()));
-  check('全开后出现正文阅读层', !!inLayer('.ins-reader-overlay'));
-  check('全开后阅读层没有侧栏', !inLayer('#page-sidebar'));
-  check('全开后阅读层没有顶部二维码', !inLayer('#qr-area'));
-  check('全开后仍有正文', !!inLayer('#article') || readerLayer.getRenderedArticle()?.id === 'article');
-  check('全开时 AI 落点仍是正文节点', readerLayer.getRenderedArticle()?.id === 'article');
-  const headlineText = inLayer('.ins-reader-headline')?.textContent || '';
-  check('全开后阅读层有标题', headlineText.includes('测试标题不能消失'));
-  check('全开后阅读层有日期来源', headlineText.includes('2026年08月23日') && headlineText.includes('人民日报'));
-  const authorEl = inLayer('.ins-reader-headline .author');
-  const dateEl = inLayer('.ins-reader-headline .date');
-  check('全开后阅读层有作者', (authorEl?.textContent || '').includes('科技播报站'));
-  check(
-    '全开后作者不另起一行',
-    !!(dateEl && authorEl && Math.abs(dateEl.getBoundingClientRect().top - authorEl.getBoundingClientRect().top) < 4)
-  );
-  check('全开后阅读层没有文末特别声明', !inLayer('#disclaimer'));
-  check('全开后原页标题节点仍在', !!document.getElementById('article-title'));
+  // ---- 启用视频/动画屏蔽：原生页面布局 ----
+  check('启用视频屏蔽时不进入正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()) === false);
+  check('启用视频屏蔽时不盖阅读层', !document.getElementById('ins-reader-host'));
+  check('启用视频屏蔽时侧栏仍在原位', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar') && document.getElementById('page-sidebar').parentElement.classList.contains('layout'));
+  check('启用视频屏蔽时正文仍在原位', document.getElementById('article').parentElement.classList.contains('layout'));
+  check('启用视频屏蔽时视频被隐藏', isLiveHidden('article-video') && isLiveHidden('side-video'));
+
+  // ---- 关闭视频屏蔽且其余三项全开：仍保留原生页面布局 ----
+  applyNoise({ sidebar: true, comments: true, banners: true, videos: false });
+  check('三项降噪全开时不进入正文模式', noiseFilter.isStrictArticleMode(prefsStore.get()) === false);
+  check('三项降噪全开时不盖阅读层', !document.getElementById('ins-reader-host'));
+  check('三项降噪全开时正文仍在原位', document.getElementById('article').parentElement.classList.contains('layout'));
+  check('三项降噪全开时侧栏仍在原位', document.getElementById('article').nextElementSibling === document.getElementById('page-sidebar'));
 
   // ---- 关掉横幅：回到真实页面，布局保持 ----
   applyNoise({ sidebar: true, comments: true, banners: false, videos: true });
