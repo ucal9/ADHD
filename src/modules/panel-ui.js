@@ -119,6 +119,24 @@ window.INS_Reader = window.INS_Reader || {};
     prefs.activePreset = '';
   }
 
+  // 一级模块重新开启时，恢复该模块所有二级开关；不重置排版数值、配色等用户配置，
+  // 也不主动触发 AI 请求，避免一次点击产生未经确认的内容上传或改写。
+  function INS_enableAllNoiseOptions(prefs) {
+    Object.keys(prefs.noiseOptions || {}).forEach((key) => {
+      prefs.noiseOptions[key] = true;
+    });
+  }
+
+  function INS_enableAllAiFeatures(prefs) {
+    prefs.aiSummary = true;
+    Object.assign(prefs.aiHighlight, {
+      enabled: true,
+      breakLongParagraphs: true,
+      simplifySentences: true,
+      markKeyInfo: true,
+    });
+  }
+
   function INS_resetToStrictDefaults(prefs) {
     const savedPresets = prefs.presets;
     const deviceId = prefs.deviceId;
@@ -338,9 +356,11 @@ window.INS_Reader = window.INS_Reader || {};
     // 降噪开关的展示顺序与 noise-filter 的 UI_NOISE_KEYS 保持一致。
     const noiseOrder = window.INS_Reader.noiseFilter.UI_NOISE_KEYS;
     const readingDisabled = prefs.enabled === false;
-    const typographyDisabled = readingDisabled || prefs.typographyEnabled === false;
-    const aiDisabled = readingDisabled || prefs.aiEnabled === false;
-    const noiseDisabled = readingDisabled || prefs.noiseReduction === false;
+    // 二级页面不再提供模块级开关，展开后的子功能直接由用户分别控制。
+    // 顶部总开关关闭时仍整体禁用配置，避免在阅读模式未启用时修改页面效果。
+    const typographyDisabled = readingDisabled;
+    const aiDisabled = readingDisabled;
+    const noiseDisabled = readingDisabled;
 
     const feasibilityReason = readerLayer.getLastFeasibilityReason();
     const feasibilityMessages = {
@@ -403,7 +423,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="typography">
           <div class="group-header ${state.expandedMenus.typography ? 'open' : ''}" data-role="typography-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.typography}" aria-controls="typography-menu">
             <span class="group-label">${MODULE_ICONS.typography}<span>舒适排版</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.typographyEnabled !== false ? 'on' : ''}" data-role="typography-master-switch" aria-label="舒适排版开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><span class="group-icon">›</span></span>
           </div>
           <div id="typography-menu" class="group-content ${state.expandedMenus.typography ? 'expanded' : ''} ${typographyDisabled ? 'is-disabled' : ''}" data-role="typography-menu" role="region" aria-disabled="${typographyDisabled}">
             <div class="setting">
@@ -457,7 +477,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="ai">
           <div class="group-header ${state.expandedMenus.ai ? 'open' : ''}" data-role="ai-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.ai}" aria-controls="ai-menu">
             <span class="group-label">${MODULE_ICONS.ai}<span>AI 内容助手</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.aiEnabled ? 'on' : ''}" data-role="ai-master-switch" aria-label="AI 内容助手开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><span class="group-icon">›</span></span>
           </div>
           <div id="ai-menu" class="group-content ${state.expandedMenus.ai ? 'expanded' : ''} ${aiDisabled ? 'is-disabled' : ''}" data-role="ai-menu" role="region" aria-disabled="${aiDisabled}">
             ${
@@ -490,7 +510,7 @@ window.INS_Reader = window.INS_Reader || {};
         <div class="expandable-group" data-group="noise">
           <div class="group-header ${state.expandedMenus.noise ? 'open' : ''}" data-role="noise-toggle" role="button" tabindex="0" aria-expanded="${state.expandedMenus.noise}" aria-controls="noise-menu">
             <span class="group-label">${MODULE_ICONS.noise}<span>动态降噪</span></span>
-            <span class="group-actions"><button class="switch small ${prefs.noiseReduction ? 'on' : ''}" data-role="noise-master-switch" aria-label="动态降噪开关" ${readingDisabled ? 'disabled' : ''}><span></span></button><span class="group-icon">›</span></span>
+            <span class="group-actions"><span class="group-icon">›</span></span>
           </div>
           <div id="noise-menu" class="group-content ${state.expandedMenus.noise ? 'expanded' : ''} ${noiseDisabled ? 'is-disabled' : ''}" data-role="noise-menu" role="region" aria-disabled="${noiseDisabled}">
             ${noiseOrder
@@ -552,6 +572,8 @@ window.INS_Reader = window.INS_Reader || {};
         prefs.typographyEnabled = true;
         prefs.aiEnabled = true;
         prefs.noiseReduction = true;
+        INS_enableAllNoiseOptions(prefs);
+        INS_enableAllAiFeatures(prefs);
         prefs.enabled = true;
         prefs.hasActivated = true;
         prefsStore.save();
@@ -679,19 +701,6 @@ window.INS_Reader = window.INS_Reader || {};
         typographyMenu.style.maxHeight = state.expandedMenus.typography ? `${typographyMenu.scrollHeight}px` : '0px';
       });
     }
-    const typographyMasterSwitch = panel.querySelector('[data-role="typography-master-switch"]');
-    if (typographyMasterSwitch) {
-      typographyMasterSwitch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (typographyMasterSwitch.disabled || !prefs.enabled) return;
-        prefs.typographyEnabled = prefs.typographyEnabled === false;
-        INS_markCustomized(prefs);
-        prefsStore.save();
-        appController.applyAll();
-        INS_render();
-      });
-    }
-
     // 降噪菜单展开/收起 - 注意这里只控制展开/收起，不同时改变 noiseReduction 状态
     const noiseToggle = panel.querySelector('[data-role="noise-toggle"]');
     const noiseMenu = panel.querySelector('[data-role="noise-menu"]');
@@ -705,19 +714,6 @@ window.INS_Reader = window.INS_Reader || {};
         noiseMenu.style.maxHeight = state.expandedMenus.noise ? `${noiseMenu.scrollHeight}px` : '0px';
       });
     }
-    const noiseMasterSwitch = panel.querySelector('[data-role="noise-master-switch"]');
-    if (noiseMasterSwitch) {
-      noiseMasterSwitch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (noiseMasterSwitch.disabled || !prefs.enabled) return;
-        prefs.noiseReduction = !prefs.noiseReduction;
-        INS_markCustomized(prefs);
-        prefsStore.save();
-        appController.applyAll();
-        INS_render();
-      });
-    }
-
     // AI 菜单展开/收起
     const aiToggle = panel.querySelector('[data-role="ai-toggle"]');
     const aiMenu = panel.querySelector('[data-role="ai-menu"]');
@@ -744,21 +740,11 @@ window.INS_Reader = window.INS_Reader || {};
         prefs.typographyEnabled = true;
         prefs.aiEnabled = true;
         prefs.noiseReduction = true;
+        INS_enableAllNoiseOptions(prefs);
+        INS_enableAllAiFeatures(prefs);
         prefs.enabled = true;
         prefsStore.save();
         appController.applyAll();
-        INS_render();
-      });
-    }
-
-    const aiMasterSwitch = panel.querySelector('[data-role="ai-master-switch"]');
-    if (aiMasterSwitch) {
-      aiMasterSwitch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (aiMasterSwitch.disabled || !prefs.enabled) return;
-        prefs.aiEnabled = !prefs.aiEnabled;
-        INS_markCustomized(prefs);
-        prefsStore.save();
         INS_render();
       });
     }
@@ -847,6 +833,10 @@ window.INS_Reader = window.INS_Reader || {};
             resultLength: summary ? summary.length : 0,
           });
           readerLayer.setSummary(summary);
+          // 原生页面模式没有阅读层容器，摘要改由独立浮窗承载；阅读层模式仍在正文顶部展示。
+          if (!readerLayer.getRenderedArticle()) {
+            window.INS_Reader.aiCard.showSummary(summary);
+          }
           appController.applyAll();
           INS_render();
         } catch (err) {

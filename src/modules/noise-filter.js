@@ -22,7 +22,8 @@ window.INS_Reader = window.INS_Reader || {};
     blockAllVideos: ['video', 'iframe[src*="youtube"]', 'iframe[src*="bilibili"]', 'iframe[src*="vimeo"]', 'iframe[src*="player"]', '[class*="video-player"]', '[class*="videoPlayer"]'],
   };
 
-  // 面板上四个细分开关。只有它们全部开启时，阅读层才从整页克隆收成正文。
+  // 动态降噪始终作用于原页面，避免任何降噪组合把网页替换成正文克隆，
+  // 从而破坏站点原有的布局、滚动容器和 DOM 关系。正文阅读层只保留给显式阅读流程。
   const UI_NOISE_KEYS = ['sidebar', 'comments', 'banners', 'blockAllVideos'];
 
   function INS_uniqueSelectors(generic, site) {
@@ -37,10 +38,7 @@ window.INS_Reader = window.INS_Reader || {};
   }
 
   function INS_isStrictArticleMode(prefs) {
-    const current = prefs || window.INS_Reader.prefsStore.get();
-    if (!current.noiseReduction) return false;
-    const groups = current.noiseOptions || window.INS_Reader.prefsStore.DEFAULT_PREFS.noiseOptions;
-    return UI_NOISE_KEYS.every((key) => groups[key]);
+    return false;
   }
 
   function INS_activeRules(prefs) {

@@ -2,7 +2,7 @@
 // INS_Reader · 沉浸阅读层模块
 // 职责：阅读模式有两条路径——
 //   降噪未全开：不盖阅读层，在真实页面上按开关隐藏噪音（不拆节点，保留原布局）；
-//   四个细分全开：在 Shadow DOM 里只展示正文克隆。
+//   动态降噪始终在真实页面上执行，保留网页原生布局；正文阅读层不由降噪开关触发。
 // 不修改原页面的父子结构。
 // 依赖 INS_Reader.prefsStore / articleLocator / feasibility / noiseFilter / domPath /
 // readingStats / aiEnhance。

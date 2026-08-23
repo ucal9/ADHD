@@ -15,6 +15,7 @@ window.INS_Reader = window.INS_Reader || {};
   const HOST_ID = 'ins-reader-ai-card-host';
 
   const FEATURE_LABELS = {
+    summary: 'AI 摘要',
     simplify: '简化段落长句',
     keyinfo: '高亮核心信息',
   };
@@ -55,11 +56,35 @@ window.INS_Reader = window.INS_Reader || {};
       box-shadow: 0 10px 30px #00000018;
       animation: ins-ai-card-in 0.16s ease-out;
     }
+    .card.has-summary {
+      top: 20px; right: auto; bottom: auto; left: 50%;
+      width: min(852px, calc(100vw - 48px));
+      min-width: 320px; min-height: 120px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
+      transform: translateX(-50%);
+      padding: 14px 18px;
+      border-radius: 8px;
+      background: #FFF3CC;
+      border-color: #FFB800;
+      box-shadow: 0 10px 30px #7A580026;
+      resize: both; overflow: auto;
+    }
+    .card.has-summary .summary-message {
+      max-height: 220px;
+      font-size: 16px;
+      color: #3b4540;
+      line-height: 1.8;
+    }
+    .card.has-summary .card-title { color: #7A5800; font-size: 14px; }
+    @media (max-width: 600px) {
+      .card.has-summary { width: calc(100vw - 24px); }
+      .card.has-summary .summary-message { font-size: 15px; }
+    }
     @keyframes ins-ai-card-in {
       from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: translateY(0); }
     }
     .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .card.has-summary .card-top { cursor: move; user-select: none; }
     .card-title { font-weight: 600; font-size: 12px; }
     .card-close {
       width: 20px; height: 20px; flex: none; padding: 0; border: 0; border-radius: 4px;
@@ -75,6 +100,7 @@ window.INS_Reader = window.INS_Reader || {};
     .row-text { flex: 1; }
     .row-label { color: #333333; }
     .row-message { display: block; margin-top: 2px; font-size: 10px; color: #777777; }
+    .summary-message { max-height: 220px; overflow-y: auto; white-space: pre-line; line-height: 1.65; }
     .row.error .row-message { color: #b95042; }
     .card-undo {
       width: 100%; height: 26px; margin-top: 11px;
@@ -98,7 +124,8 @@ window.INS_Reader = window.INS_Reader || {};
     shadow.appendChild(style);
 
     const card = document.createElement('div');
-    card.className = 'card';
+    const hasSummary = state.entries.has('summary');
+    card.className = `card${hasSummary ? ' has-summary' : ''}`;
 
     const top = document.createElement('div');
     top.className = 'card-top';
@@ -113,6 +140,37 @@ window.INS_Reader = window.INS_Reader || {};
     top.append(title, close);
     card.appendChild(top);
 
+    if (hasSummary) {
+      top.title = '拖动移动摘要窗口';
+      top.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('button')) return;
+        event.preventDefault();
+        const rect = card.getBoundingClientRect();
+        const offsetX = event.clientX - rect.left;
+        const offsetY = event.clientY - rect.top;
+        card.style.transform = 'none';
+        card.style.left = `${rect.left}px`;
+        card.style.top = `${rect.top}px`;
+        card.style.right = 'auto';
+        card.style.bottom = 'auto';
+
+        const move = (moveEvent) => {
+          const maxLeft = Math.max(12, window.innerWidth - card.offsetWidth - 12);
+          const maxTop = Math.max(12, window.innerHeight - card.offsetHeight - 12);
+          const left = Math.min(maxLeft, Math.max(12, moveEvent.clientX - offsetX));
+          const top = Math.min(maxTop, Math.max(12, moveEvent.clientY - offsetY));
+          card.style.left = `${left}px`;
+          card.style.top = `${top}px`;
+        };
+        const stop = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', stop);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop, { once: true });
+      });
+    }
+
     for (const [feature, entry] of state.entries) {
       const row = document.createElement('div');
       row.className = `row ${entry.status}`;
@@ -126,7 +184,7 @@ window.INS_Reader = window.INS_Reader || {};
       textWrap.appendChild(label);
       if (entry.message) {
         const message = document.createElement('span');
-        message.className = 'row-message';
+        message.className = `row-message${feature === 'summary' ? ' summary-message' : ''}`;
         message.textContent = entry.message;
         textWrap.appendChild(message);
       }
@@ -160,6 +218,11 @@ window.INS_Reader = window.INS_Reader || {};
     INS_render();
   }
 
+  function INS_showSummary(text) {
+    state.entries.set('summary', { status: 'done', message: text || '' });
+    INS_render();
+  }
+
   function INS_showError(feature, message) {
     state.entries.set(feature, { status: 'error', message: message || '处理失败' });
     INS_render();
@@ -185,6 +248,7 @@ window.INS_Reader = window.INS_Reader || {};
   window.INS_Reader.aiCard = {
     showLoading: INS_showLoading,
     showResult: INS_showResult,
+    showSummary: INS_showSummary,
     showError: INS_showError,
     clearFeature: INS_clearFeature,
     dismiss: INS_dismiss,
